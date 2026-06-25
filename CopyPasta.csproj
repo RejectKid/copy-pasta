@@ -31,10 +31,12 @@
   </ItemGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' != 'net10.0-windows'">
-    <Compile Remove="Windows*.cs" />
+    <Compile Remove="Platforms\Windows\**\*.cs" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'net10.0-windows'">
-    <Compile Remove="Unsupported*.cs" />
+    <Compile Remove="Platforms\Linux\**\*.cs" />
+    <Compile Remove="Platforms\MacOS\**\*.cs" />
+    <Compile Remove="Platforms\Unsupported\**\*.cs" />
   </ItemGroup>
 </Project>

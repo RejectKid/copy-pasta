@@ -10,17 +10,17 @@ The app is intentionally hotkey-driven and does not auto-capture.
 - No clipboard dependency for capture or typing
 - Character-by-character output through simulated keyboard input
 - Optional text styling metadata capture when the source app exposes it through UI Automation
-- Persistent history at `%AppData%\CopyPasta\history.json`
+- Persistent history under the current user's application data folder
 
 ## Platform Support
 
 | Platform | UI | Global hotkeys | Selection capture | Text output |
 | --- | --- | --- | --- | --- |
 | Windows | Supported | Supported | Supported through UI Automation and native edit controls | Supported through `SendInput` |
-| macOS | Builds | Not implemented yet | Not implemented yet | Not implemented yet |
-| Linux | Builds | Not implemented yet | Not implemented yet | Not implemented yet |
+| macOS | Supported | Supported through a keyboard event tap | Supported through Accessibility selected text | Supported through Core Graphics keyboard events |
+| Linux | Supported on X11 | Supported through XGrabKey | Supported through the X11 PRIMARY selection | Supported through XTest keyboard events |
 
-macOS and Linux have different native accessibility and input APIs, so their capture/type behavior is represented behind platform service interfaces and intentionally reports unsupported until those implementations are added.
+Linux support currently targets X11. Wayland does not expose a general global hotkey, selected-text, or synthetic-keyboard API that this app can use without desktop-environment-specific portals or extensions.
 
 ## Hotkeys
 
@@ -32,13 +32,24 @@ Copy Pasta does not auto-capture. Capture only runs when you press `Ctrl+Alt+C`.
 
 ## Notes
 
-- Selection capture depends on the target app exposing selected text through Windows UI Automation. Some apps, games, terminals, remote desktops, and elevated/admin windows may not expose it.
+- Selection capture depends on the target app exposing selected text through the host OS accessibility or selection APIs. Some apps, games, terminals, remote desktops, elevated/admin windows, and sandboxed apps may not expose it.
 - The clipboard is not used for capture or typing.
-- App-internal rich capture is limited to text styling metadata exposed by UI Automation. Arbitrary rich content such as images, files, HTML, and RTF is not available through a general non-clipboard Windows selection API.
+- App-internal rich capture is limited to text styling metadata exposed by the platform. Arbitrary rich content such as images, files, HTML, and RTF is not available through a general non-clipboard selection API.
+- macOS requires Accessibility permission. It may also require Input Monitoring permission depending on OS version and security settings.
+- Linux requires X11 plus `libX11` and `libXtst`. Text output currently supports common ASCII characters.
+
+## Code Layout
+
+- `Core`: shared history models and platform service contracts
+- `UI`: Avalonia app and main window
+- `Platforms/Windows`: Windows UI Automation, Win32 hotkey, and `SendInput` services
+- `Platforms/MacOS`: Accessibility and Core Graphics services
+- `Platforms/Linux`: X11 and XTest services
+- `Platforms/Unsupported`: fallback services for unsupported desktop environments
 
 ## Requirements
 
-- Windows, macOS, or Linux for the Avalonia UI
+- Windows, macOS, or Linux
 - .NET SDK 10 or later
 
 ## Build and Run
