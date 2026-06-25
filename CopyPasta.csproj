@@ -1,0 +1,15 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>CopyPasta</AssemblyName>
+    <RootNamespace>CopyPasta</RootNamespace>
+    <Product>Copy Pasta</Product>
+    <Description>Hotkey-driven Windows text capture and character-by-character typing without clipboard dependency.</Description>
+    <Authors>RejectKid</Authors>
+  </PropertyGroup>
+</Project>
