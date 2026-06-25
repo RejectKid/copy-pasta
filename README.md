@@ -37,6 +37,7 @@ Copy Pasta does not auto-capture. Capture only runs when you press `Ctrl+Alt+C`.
 - App-internal rich capture is limited to text styling metadata exposed by the platform. Arbitrary rich content such as images, files, HTML, and RTF is not available through a general non-clipboard selection API.
 - macOS requires Accessibility permission. It may also require Input Monitoring permission depending on OS version and security settings.
 - Linux requires X11 plus `libX11` and `libXtst`. Text output currently supports common ASCII characters.
+- App icon: [Spaghetti icon](https://www.flaticon.com/free-icon/spaghetti_4465494) by Freepik from Flaticon. Free for personal and commercial use with attribution.
 
 ## Code Layout
 
