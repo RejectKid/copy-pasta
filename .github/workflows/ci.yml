@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-validate:
+    name: Build and validate
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore CopyPasta.csproj
+
+      - name: Build
+        run: dotnet build CopyPasta.slnx -c Release --no-restore
+
+      - name: Check formatting
+        run: dotnet format CopyPasta.slnx --verify-no-changes --no-restore
+
+      - name: Validate Windows publish
+        run: dotnet publish CopyPasta.csproj -c Release -f net10.0-windows -r win-x64 --self-contained false --no-restore -o "${{ runner.temp }}/CopyPasta-win-x64"
+
+      - name: Validate Linux publish
+        run: dotnet publish CopyPasta.csproj -c Release -f net10.0 -r linux-x64 --self-contained false --no-restore -o "${{ runner.temp }}/CopyPasta-linux-x64"
+
+      - name: Validate macOS publish
+        run: dotnet publish CopyPasta.csproj -c Release -f net10.0 -r osx-arm64 --self-contained false --no-restore -o "${{ runner.temp }}/CopyPasta-osx-arm64"
