@@ -1,6 +1,6 @@
 # Copy Pasta
 
-Copy Pasta is a small Windows desktop utility for capturing selected text into an app-local history without using the Windows clipboard. It reads selections through Windows UI Automation and types saved entries back into the active app one character at a time.
+Copy Pasta is a small Avalonia desktop utility for capturing selected text into an app-local history without using the system clipboard. It reads selections through native platform services and types saved entries back into the active app one character at a time.
 
 The app is intentionally hotkey-driven and does not auto-capture.
 
@@ -11,6 +11,16 @@ The app is intentionally hotkey-driven and does not auto-capture.
 - Character-by-character output through simulated keyboard input
 - Optional text styling metadata capture when the source app exposes it through UI Automation
 - Persistent history at `%AppData%\CopyPasta\history.json`
+
+## Platform Support
+
+| Platform | UI | Global hotkeys | Selection capture | Text output |
+| --- | --- | --- | --- | --- |
+| Windows | Supported | Supported | Supported through UI Automation and native edit controls | Supported through `SendInput` |
+| macOS | Builds | Not implemented yet | Not implemented yet | Not implemented yet |
+| Linux | Builds | Not implemented yet | Not implemented yet | Not implemented yet |
+
+macOS and Linux have different native accessibility and input APIs, so their capture/type behavior is represented behind platform service interfaces and intentionally reports unsupported until those implementations are added.
 
 ## Hotkeys
 
@@ -28,20 +38,22 @@ Copy Pasta does not auto-capture. Capture only runs when you press `Ctrl+Alt+C`.
 
 ## Requirements
 
-- Windows
+- Windows, macOS, or Linux for the Avalonia UI
 - .NET SDK 10 or later
 
 ## Build and Run
 
 ```powershell
 dotnet build .\CopyPasta.slnx
-dotnet run --project .\CopyPasta.csproj
+dotnet run --project .\CopyPasta.csproj -f net10.0-windows
 ```
 
 ## Publish
 
 ```powershell
-dotnet publish .\CopyPasta.csproj -c Release -r win-x64 --self-contained false
+dotnet publish .\CopyPasta.csproj -c Release -f net10.0-windows -r win-x64 --self-contained false
+dotnet publish .\CopyPasta.csproj -c Release -f net10.0 -r linux-x64 --self-contained false
+dotnet publish .\CopyPasta.csproj -c Release -f net10.0 -r osx-arm64 --self-contained false
 ```
 
-The published app will be under `bin\Release\net10.0-windows\win-x64\publish`.
+Published apps will be under `bin\Release\<target-framework>\<runtime>\publish`.
