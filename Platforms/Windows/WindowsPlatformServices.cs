@@ -1,31 +1,127 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Automation;
+using Avalonia.Controls;
+using Avalonia.Platform;
 
 namespace CopyPasta;
 
-internal sealed record SelectionReadResult(string Text, string Source, TextStyleSnapshot? Style = null);
-
-internal sealed class TextStyleSnapshot
+internal static class PlatformServicesFactory
 {
-    public string FontName { get; set; } = string.Empty;
-    public double? FontSize { get; set; }
-    public int? FontWeight { get; set; }
-    public bool? IsItalic { get; set; }
-    public int? ForegroundColor { get; set; }
-    public int? BackgroundColor { get; set; }
+    public static IGlobalHotkeyService CreateHotkeyService() => new WindowsGlobalHotkeyService();
 
-    public bool HasAny =>
-        !string.IsNullOrEmpty(FontName) ||
-        FontSize.HasValue ||
-        FontWeight.HasValue ||
-        IsItalic.HasValue ||
-        ForegroundColor.HasValue ||
-        BackgroundColor.HasValue;
+    public static ISelectionCaptureService CreateSelectionCaptureService() => new WindowsSelectionCaptureService();
+
+    public static ITextOutputService CreateTextOutputService() => new WindowsTextOutputService();
 }
 
-internal static class SelectionReader
+internal sealed class WindowsGlobalHotkeyService : IGlobalHotkeyService
+{
+    private const int CaptureHotkeyId = 100;
+    private const int TypeHotkeyId = 101;
+    private const int StopHotkeyId = 102;
+
+    private const uint VirtualKeyC = 0x43;
+    private const uint VirtualKeyV = 0x56;
+    private const uint VirtualKeyX = 0x58;
+
+    private IntPtr _handle;
+    private IntPtr _previousWndProc;
+    private bool _registered;
+    private readonly NativeMethods.WndProcDelegate _wndProc;
+
+    public WindowsGlobalHotkeyService()
+    {
+        _wndProc = WndProc;
+    }
+
+    public event EventHandler<CopyPastaHotkey>? HotkeyPressed;
+
+    public bool Register(Window window, out string? error)
+    {
+        error = null;
+
+        if (_registered)
+        {
+            return true;
+        }
+
+        if (window.TryGetPlatformHandle() is not { } platformHandle ||
+            platformHandle.Handle == IntPtr.Zero ||
+            platformHandle.HandleDescriptor != "HWND")
+        {
+            error = "Could not resolve the native Windows window handle.";
+            return false;
+        }
+
+        _handle = platformHandle.Handle;
+        _previousWndProc = NativeMethods.SetWindowLongPtr(_handle, NativeMethods.GwlpWndProc, _wndProc);
+        if (_previousWndProc == IntPtr.Zero)
+        {
+            error = new Win32Exception(Marshal.GetLastWin32Error()).Message;
+            return false;
+        }
+
+        var modifiers = NativeMethods.ModControl | NativeMethods.ModAlt | NativeMethods.ModNoRepeat;
+        var captureRegistered = NativeMethods.RegisterHotKey(_handle, CaptureHotkeyId, modifiers, VirtualKeyC);
+        var typeRegistered = NativeMethods.RegisterHotKey(_handle, TypeHotkeyId, modifiers, VirtualKeyV);
+        var stopRegistered = NativeMethods.RegisterHotKey(_handle, StopHotkeyId, modifiers, VirtualKeyX);
+
+        _registered = captureRegistered || typeRegistered || stopRegistered;
+
+        if (!captureRegistered || !typeRegistered || !stopRegistered)
+        {
+            error = "One or more global hotkeys are already in use by another app.";
+        }
+
+        return _registered;
+    }
+
+    public void Dispose()
+    {
+        if (_handle != IntPtr.Zero)
+        {
+            NativeMethods.UnregisterHotKey(_handle, CaptureHotkeyId);
+            NativeMethods.UnregisterHotKey(_handle, TypeHotkeyId);
+            NativeMethods.UnregisterHotKey(_handle, StopHotkeyId);
+
+            if (_previousWndProc != IntPtr.Zero)
+            {
+                NativeMethods.SetWindowLongPtr(_handle, NativeMethods.GwlpWndProc, _previousWndProc);
+            }
+        }
+
+        _registered = false;
+        _handle = IntPtr.Zero;
+        _previousWndProc = IntPtr.Zero;
+        HotkeyPressed = null;
+    }
+
+    private IntPtr WndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
+    {
+        if (msg == NativeMethods.WmHotKey)
+        {
+            switch (wParam.ToInt32())
+            {
+                case CaptureHotkeyId:
+                    HotkeyPressed?.Invoke(this, CopyPastaHotkey.Capture);
+                    return IntPtr.Zero;
+                case TypeHotkeyId:
+                    HotkeyPressed?.Invoke(this, CopyPastaHotkey.Type);
+                    return IntPtr.Zero;
+                case StopHotkeyId:
+                    HotkeyPressed?.Invoke(this, CopyPastaHotkey.Stop);
+                    return IntPtr.Zero;
+            }
+        }
+
+        return NativeMethods.CallWindowProc(_previousWndProc, hWnd, msg, wParam, lParam);
+    }
+}
+
+internal sealed class WindowsSelectionCaptureService : ISelectionCaptureService
 {
     private const uint EmGetSel = 0x00B0;
     private const uint EmGetPasswordChar = 0x00D2;
@@ -35,7 +131,7 @@ internal static class SelectionReader
     private const int MaxSelectionChars = 200_000;
     private static readonly int CurrentProcessId = Process.GetCurrentProcess().Id;
 
-    public static SelectionReadResult? TryReadSelectedText(out string? error)
+    public SelectionReadResult? TryCapture(out string? error)
     {
         error = null;
 
@@ -50,13 +146,7 @@ internal static class SelectionReader
                 }
             }
 
-            var nativeResult = TryReadFocusedNativeSelection();
-            if (nativeResult is not null)
-            {
-                return nativeResult;
-            }
-
-            return null;
+            return TryReadFocusedNativeSelection();
         }
         catch (ElementNotAvailableException)
         {
@@ -310,16 +400,116 @@ internal static class SelectionReader
             var name = element.Current.Name;
             var controlType = element.Current.ControlType?.ProgrammaticName.Replace("ControlType.", "", StringComparison.Ordinal) ?? "control";
 
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                return controlType;
-            }
-
-            return $"{controlType}: {name}";
+            return string.IsNullOrWhiteSpace(name) ? controlType : $"{controlType}: {name}";
         }
         catch (ElementNotAvailableException)
         {
             return "selection";
         }
+    }
+}
+
+internal sealed class WindowsTextOutputService : ITextOutputService
+{
+    private const int VirtualKeyControl = 0x11;
+    private const int VirtualKeyAlt = 0x12;
+    private const int VirtualKeyV = 0x56;
+    private const ushort VirtualKeyEnter = 0x0D;
+
+    public Task WaitForTypeHotkeyReleaseAsync(CancellationToken cancellationToken)
+    {
+        return WaitForKeysReleasedAsync(cancellationToken, VirtualKeyControl, VirtualKeyAlt, VirtualKeyV);
+    }
+
+    public async Task TypeTextAsync(string text, int delayMs, CancellationToken cancellationToken, IProgress<int>? progress = null)
+    {
+        for (var i = 0; i < text.Length; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var character = text[i];
+            if (character == '\r')
+            {
+                if (i + 1 < text.Length && text[i + 1] == '\n')
+                {
+                    i++;
+                }
+
+                SendVirtualKey(VirtualKeyEnter);
+            }
+            else if (character == '\n')
+            {
+                SendVirtualKey(VirtualKeyEnter);
+            }
+            else
+            {
+                SendUnicodeCharacter(character);
+            }
+
+            progress?.Report(i + 1);
+
+            if (delayMs > 0)
+            {
+                await Task.Delay(delayMs, cancellationToken);
+            }
+        }
+    }
+
+    private static async Task WaitForKeysReleasedAsync(CancellationToken cancellationToken, params int[] virtualKeys)
+    {
+        while (virtualKeys.Any(IsKeyDown))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await Task.Delay(20, cancellationToken);
+        }
+    }
+
+    private static void SendUnicodeCharacter(char character)
+    {
+        SendKeyboardInputs(
+            new NativeMethods.KEYBDINPUT
+            {
+                wScan = character,
+                dwFlags = NativeMethods.KeyEventFUnicode
+            },
+            new NativeMethods.KEYBDINPUT
+            {
+                wScan = character,
+                dwFlags = NativeMethods.KeyEventFUnicode | NativeMethods.KeyEventFKeyUp
+            });
+    }
+
+    private static void SendVirtualKey(ushort virtualKey)
+    {
+        SendKeyboardInputs(
+            new NativeMethods.KEYBDINPUT
+            {
+                wVk = virtualKey
+            },
+            new NativeMethods.KEYBDINPUT
+            {
+                wVk = virtualKey,
+                dwFlags = NativeMethods.KeyEventFKeyUp
+            });
+    }
+
+    private static void SendKeyboardInputs(params NativeMethods.KEYBDINPUT[] keyboardInputs)
+    {
+        var inputs = keyboardInputs.Select(input => new NativeMethods.INPUT
+        {
+            type = NativeMethods.InputKeyboard,
+            U = new NativeMethods.InputUnion { ki = input }
+        }).ToArray();
+
+        var sent = NativeMethods.SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<NativeMethods.INPUT>());
+        if (sent != inputs.Length)
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+    }
+
+    private static bool IsKeyDown(int virtualKey)
+    {
+        return (NativeMethods.GetAsyncKeyState(virtualKey) & 0x8000) != 0;
     }
 }

@@ -1,26 +1,20 @@
 using System.Collections.ObjectModel;
-using System.Windows;
-using System.Windows.Interop;
-using System.Windows.Media;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Media;
 
 namespace CopyPasta;
 
 public partial class MainWindow : Window
 {
-    private const int CaptureHotKeyId = 100;
-    private const int TypeHotKeyId = 101;
-    private const int StopHotKeyId = 102;
     private const int DefaultTypingDelayMs = 12;
-
-    private const uint VirtualKeyC = 0x43;
-    private const uint VirtualKeyV = 0x56;
-    private const uint VirtualKeyX = 0x58;
 
     private readonly HistoryStore _historyStore = new();
     private readonly ObservableCollection<HistoryEntry> _history = [];
+    private readonly IGlobalHotkeyService _hotkeys = PlatformServices.CreateHotkeyService();
+    private readonly ISelectionCaptureService _selectionCapture = PlatformServices.CreateSelectionCaptureService();
+    private readonly ITextOutputService _textOutput = PlatformServices.CreateTextOutputService();
 
-    private HwndSource? _source;
-    private bool _hotkeysRegistered;
     private bool _isTyping;
     private CancellationTokenSource? _typingCancellation;
 
@@ -30,61 +24,55 @@ public partial class MainWindow : Window
 
         HistoryList.ItemsSource = _history;
         LoadHistory();
+
+        Opened += MainWindow_Opened;
+        Closed += MainWindow_Closed;
     }
 
-    protected override void OnSourceInitialized(EventArgs e)
+    private void MainWindow_Opened(object? sender, EventArgs e)
     {
-        base.OnSourceInitialized(e);
+        _hotkeys.HotkeyPressed += Hotkeys_HotkeyPressed;
 
-        var helper = new WindowInteropHelper(this);
-        _source = HwndSource.FromHwnd(helper.Handle);
-        _source?.AddHook(WndProc);
-        RegisterHotKeys(helper.Handle);
+        if (!_hotkeys.Register(this, out var error))
+        {
+            SetStatus(error ?? "Global hotkeys are not available on this platform.");
+        }
     }
 
-    protected override void OnClosed(EventArgs e)
+    private void MainWindow_Closed(object? sender, EventArgs e)
     {
         StopTyping();
-        UnregisterHotKeys();
-        _source?.RemoveHook(WndProc);
-        base.OnClosed(e);
+        _hotkeys.HotkeyPressed -= Hotkeys_HotkeyPressed;
+        _hotkeys.Dispose();
     }
 
-    private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    private void Hotkeys_HotkeyPressed(object? sender, CopyPastaHotkey hotkey)
     {
-        if (msg != NativeMethods.WmHotKey)
+        switch (hotkey)
         {
-            return IntPtr.Zero;
-        }
-
-        switch (wParam.ToInt32())
-        {
-            case CaptureHotKeyId:
+            case CopyPastaHotkey.Capture:
                 CaptureTextSelection();
                 break;
-            case TypeHotKeyId:
+            case CopyPastaHotkey.Type:
                 _ = TypeSelectedAsync();
                 break;
-            case StopHotKeyId:
+            case CopyPastaHotkey.Stop:
                 StopTyping();
                 break;
         }
-
-        handled = true;
-        return IntPtr.Zero;
     }
 
-    private void RemoveButton_Click(object sender, RoutedEventArgs e)
+    private void RemoveButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         RemoveSelected();
     }
 
-    private void ClearButton_Click(object sender, RoutedEventArgs e)
+    private void ClearButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         ClearHistory();
     }
 
-    private void HistoryList_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    private void HistoryList_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
         ShowSelectedPreview();
     }
@@ -106,47 +94,12 @@ public partial class MainWindow : Window
         }
     }
 
-    private void RegisterHotKeys(IntPtr handle)
-    {
-        if (_hotkeysRegistered)
-        {
-            return;
-        }
-
-        var modifiers = NativeMethods.ModControl | NativeMethods.ModAlt | NativeMethods.ModNoRepeat;
-        var captureRegistered = NativeMethods.RegisterHotKey(handle, CaptureHotKeyId, modifiers, VirtualKeyC);
-        var typeRegistered = NativeMethods.RegisterHotKey(handle, TypeHotKeyId, modifiers, VirtualKeyV);
-        var stopRegistered = NativeMethods.RegisterHotKey(handle, StopHotKeyId, modifiers, VirtualKeyX);
-
-        _hotkeysRegistered = captureRegistered || typeRegistered || stopRegistered;
-
-        if (!captureRegistered || !typeRegistered || !stopRegistered)
-        {
-            SetStatus("One or more hotkeys are already in use by another app.");
-        }
-    }
-
-    private void UnregisterHotKeys()
-    {
-        if (!_hotkeysRegistered || _source is null)
-        {
-            return;
-        }
-
-        NativeMethods.UnregisterHotKey(_source.Handle, CaptureHotKeyId);
-        NativeMethods.UnregisterHotKey(_source.Handle, TypeHotKeyId);
-        NativeMethods.UnregisterHotKey(_source.Handle, StopHotKeyId);
-        _hotkeysRegistered = false;
-    }
-
     private void CaptureTextSelection()
     {
-        var result = SelectionReader.TryReadSelectedText(out var error);
+        var result = _selectionCapture.TryCapture(out var error);
         if (result is null)
         {
-            SetStatus(error is null
-                ? "No UI Automation selection found."
-                : $"Selection read failed: {error}");
+            SetStatus(error ?? "No supported selection found.");
             return;
         }
 
@@ -212,7 +165,7 @@ public partial class MainWindow : Window
         try
         {
             SetStatus("Release Ctrl+Alt+V to continue.");
-            await TextTyper.WaitForPasteHotKeyReleaseAsync(_typingCancellation.Token);
+            await _textOutput.WaitForTypeHotkeyReleaseAsync(_typingCancellation.Token);
 
             var lastProgress = 0;
             var progress = new Progress<int>(count =>
@@ -224,7 +177,7 @@ public partial class MainWindow : Window
                 }
             });
 
-            await TextTyper.TypeTextAsync(entry.Text, DefaultTypingDelayMs, _typingCancellation.Token, progress);
+            await _textOutput.TypeTextAsync(entry.Text, DefaultTypingDelayMs, _typingCancellation.Token, progress);
             SetStatus($"Typed {entry.Text.Length:N0} characters.");
         }
         catch (OperationCanceledException)
@@ -322,17 +275,15 @@ public partial class MainWindow : Window
 
     private void ApplyPreviewStyle(TextStyleSnapshot? style)
     {
-        PreviewText.ClearValue(FontFamilyProperty);
-        PreviewText.ClearValue(FontSizeProperty);
-        PreviewText.ClearValue(FontWeightProperty);
-        PreviewText.ClearValue(FontStyleProperty);
-        PreviewText.ClearValue(ForegroundProperty);
-        PreviewText.ClearValue(BackgroundProperty);
+        PreviewText.FontFamily = new FontFamily("Consolas");
+        PreviewText.FontSize = 13;
+        PreviewText.FontWeight = FontWeight.Normal;
+        PreviewText.FontStyle = FontStyle.Normal;
+        PreviewText.Foreground = Brushes.Black;
+        PreviewText.Background = Brushes.White;
 
         if (style is null)
         {
-            PreviewText.FontFamily = new FontFamily("Consolas");
-            PreviewText.FontSize = 13;
             return;
         }
 
@@ -348,12 +299,12 @@ public partial class MainWindow : Window
 
         if (style.FontWeight.HasValue)
         {
-            PreviewText.FontWeight = style.FontWeight.Value >= 700 ? FontWeights.Bold : FontWeights.Normal;
+            PreviewText.FontWeight = style.FontWeight.Value >= 700 ? FontWeight.Bold : FontWeight.Normal;
         }
 
         if (style.IsItalic.HasValue)
         {
-            PreviewText.FontStyle = style.IsItalic.Value ? FontStyles.Italic : FontStyles.Normal;
+            PreviewText.FontStyle = style.IsItalic.Value ? FontStyle.Italic : FontStyle.Normal;
         }
 
         if (style.ForegroundColor.HasValue)

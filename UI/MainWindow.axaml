@@ -1,12 +1,11 @@
-<Window x:Class="CopyPasta.MainWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CopyPasta.MainWindow"
         Title="Copy Pasta"
         Width="980"
         Height="620"
         MinWidth="760"
-        MinHeight="480"
-        WindowStartupLocation="CenterScreen">
+        MinHeight="480">
     <DockPanel>
         <Border DockPanel.Dock="Top"
                 Padding="10"
@@ -28,22 +27,16 @@
             </WrapPanel>
         </Border>
 
-        <StatusBar DockPanel.Dock="Bottom">
+        <Border DockPanel.Dock="Bottom"
+                Padding="8,4"
+                BorderBrush="#DADDE3"
+                BorderThickness="0,1,0,0">
             <TextBlock x:Name="StatusText" Text="Ready" />
-        </StatusBar>
+        </Border>
 
-        <Grid Margin="10">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="360" MinWidth="260" />
-                <ColumnDefinition Width="8" />
-                <ColumnDefinition Width="*" MinWidth="260" />
-            </Grid.ColumnDefinitions>
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" />
-                <RowDefinition Height="Auto" />
-            </Grid.RowDefinitions>
-
+        <Grid Margin="10"
+              ColumnDefinitions="360,8,*"
+              RowDefinitions="Auto,*,Auto">
             <TextBlock Grid.Column="0"
                        Grid.Row="0"
                        Text="History"
@@ -53,10 +46,7 @@
                      Grid.Column="0"
                      Grid.Row="1"
                      Grid.RowSpan="2"
-                     DisplayMemberPath="DisplayText"
-                     SelectionChanged="HistoryList_SelectionChanged"
-                     ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                     ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                     SelectionChanged="HistoryList_SelectionChanged" />
 
             <GridSplitter Grid.Column="1"
                           Grid.Row="0"
@@ -79,9 +69,7 @@
                      AcceptsTab="True"
                      TextWrapping="NoWrap"
                      FontFamily="Consolas"
-                     FontSize="13"
-                     HorizontalScrollBarVisibility="Auto"
-                     VerticalScrollBarVisibility="Auto" />
+                     FontSize="13" />
             <TextBlock x:Name="DetailsText"
                        Grid.Column="2"
                        Grid.Row="2"
