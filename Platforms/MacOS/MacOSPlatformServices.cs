@@ -8,9 +8,15 @@ internal sealed class MacOSGlobalHotkeyService : IGlobalHotkeyService
     private const int KeyCodeC = 8;
     private const int KeyCodeV = 9;
     private const int KeyCodeX = 7;
+    private const int EventTypeKeyDown = 10;
+    private const int EventTapDisabledByTimeout = -2;
+    private const int EventTapDisabledByUserInput = -1;
+    private const int KeyboardEventAutorepeatField = 8;
+    private const int KeyboardEventKeycodeField = 9;
     private const ulong EventMaskKeyDown = 1UL << 10;
     private const ulong EventFlagMaskControl = 0x0004_0000;
     private const ulong EventFlagMaskAlternate = 0x0008_0000;
+    private const ulong EventFlagMaskCommand = 0x0010_0000;
 
     private IntPtr _eventTap;
     private IntPtr _runLoopSource;
@@ -77,16 +83,32 @@ internal sealed class MacOSGlobalHotkeyService : IGlobalHotkeyService
 
     private IntPtr EventTapCallback(IntPtr proxy, int type, IntPtr eventRef, IntPtr userInfo)
     {
-        if (type != 10)
+        if (type is EventTapDisabledByTimeout or EventTapDisabledByUserInput)
+        {
+            if (_eventTap != IntPtr.Zero)
+            {
+                MacNative.CGEventTapEnable(_eventTap, true);
+            }
+
+            return eventRef;
+        }
+
+        if (type != EventTypeKeyDown)
+        {
+            return eventRef;
+        }
+
+        if (MacNative.CGEventGetIntegerValueField(eventRef, KeyboardEventAutorepeatField) != 0)
         {
             return eventRef;
         }
 
         var flags = (ulong)MacNative.CGEventGetFlags(eventRef);
-        var keyCode = (int)MacNative.CGEventGetIntegerValueField(eventRef, 9);
-        var hasModifiers = (flags & EventFlagMaskControl) != 0 && (flags & EventFlagMaskAlternate) != 0;
+        var keyCode = (int)MacNative.CGEventGetIntegerValueField(eventRef, KeyboardEventKeycodeField);
+        var hasOption = (flags & EventFlagMaskAlternate) != 0;
+        var hasMacPrimary = (flags & (EventFlagMaskCommand | EventFlagMaskControl)) != 0;
 
-        if (!hasModifiers)
+        if (!hasOption || !hasMacPrimary)
         {
             return eventRef;
         }
@@ -165,9 +187,24 @@ internal sealed class MacOSSelectionCaptureService : ISelectionCaptureService
 
 internal sealed class MacOSTextOutputService : ITextOutputService
 {
-    public Task WaitForTypeHotkeyReleaseAsync(CancellationToken cancellationToken)
+    private static readonly ushort[] TypeHotkeyKeyCodes =
+    [
+        MacNative.KeyCodeV,
+        MacNative.KeyCodeLeftControl,
+        MacNative.KeyCodeRightControl,
+        MacNative.KeyCodeLeftOption,
+        MacNative.KeyCodeRightOption,
+        MacNative.KeyCodeLeftCommand,
+        MacNative.KeyCodeRightCommand
+    ];
+
+    public async Task WaitForTypeHotkeyReleaseAsync(CancellationToken cancellationToken)
     {
-        return Task.Delay(120, cancellationToken);
+        while (TypeHotkeyKeyCodes.Any(MacNative.IsKeyDown))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await Task.Delay(20, cancellationToken);
+        }
     }
 
     public async Task TypeTextAsync(string text, int delayMs, CancellationToken cancellationToken, IProgress<int>? progress = null)
@@ -189,6 +226,15 @@ internal sealed class MacOSTextOutputService : ITextOutputService
 internal static class MacNative
 {
     private const string CoreFoundationPath = "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation";
+    private const int EventSourceStateCombinedSessionState = 0;
+
+    public const ushort KeyCodeV = 9;
+    public const ushort KeyCodeRightCommand = 54;
+    public const ushort KeyCodeLeftCommand = 55;
+    public const ushort KeyCodeLeftOption = 58;
+    public const ushort KeyCodeLeftControl = 59;
+    public const ushort KeyCodeRightOption = 61;
+    public const ushort KeyCodeRightControl = 62;
 
     public static readonly IntPtr kCFRunLoopCommonModes = GetCoreFoundationStringConstant("kCFRunLoopCommonModes");
 
@@ -224,6 +270,9 @@ internal static class MacNative
     [DllImport("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices")]
     public static extern void CGEventPost(int tap, IntPtr eventRef);
 
+    [DllImport("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices")]
+    private static extern bool CGEventSourceKeyState(int stateID, ushort key);
+
     [DllImport(CoreFoundationPath)]
     public static extern IntPtr CFMachPortCreateRunLoopSource(IntPtr allocator, IntPtr port, nint order);
 
@@ -255,6 +304,11 @@ internal static class MacNative
         return CFStringGetCString(cfString, buffer, buffer.Length, 0x08000100)
             ? System.Text.Encoding.UTF8.GetString(buffer).TrimEnd('\0')
             : string.Empty;
+    }
+
+    public static bool IsKeyDown(ushort keyCode)
+    {
+        return CGEventSourceKeyState(EventSourceStateCombinedSessionState, keyCode);
     }
 
     public static void PostUnicodeCharacter(char character)

@@ -1,7 +1,9 @@
 using System.Collections.ObjectModel;
+using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
+using Avalonia.Threading;
 
 namespace CopyPasta;
 
@@ -23,6 +25,10 @@ public partial class MainWindow : Window
         InitializeComponent();
 
         HistoryList.ItemsSource = _history;
+        HotkeyHelpText.Text = RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
+            ? "Cmd+Opt+C capture | Cmd+Opt+V type | Cmd+Opt+X stop"
+            : "Ctrl+Alt+C capture | Ctrl+Alt+V type | Ctrl+Alt+X stop";
+
         LoadHistory();
 
         Opened += MainWindow_Opened;
@@ -47,6 +53,17 @@ public partial class MainWindow : Window
     }
 
     private void Hotkeys_HotkeyPressed(object? sender, CopyPastaHotkey hotkey)
+    {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(() => HandleHotkey(hotkey));
+            return;
+        }
+
+        HandleHotkey(hotkey);
+    }
+
+    private void HandleHotkey(CopyPastaHotkey hotkey)
     {
         switch (hotkey)
         {

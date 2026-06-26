@@ -9,6 +9,16 @@ internal sealed class LinuxGlobalHotkeyService : IGlobalHotkeyService
     private const int KeyPress = 2;
     private const int ControlMask = 1 << 2;
     private const int Mod1Mask = 1 << 3;
+    private const int LockMask = 1 << 1;
+    private const int Mod2Mask = 1 << 4;
+
+    private static readonly int[] IgnoredModifierMasks =
+    [
+        0,
+        LockMask,
+        Mod2Mask,
+        LockMask | Mod2Mask
+    ];
 
     private readonly CancellationTokenSource _cancellation = new();
     private readonly Dictionary<uint, CopyPastaHotkey> _keycodes = [];
@@ -46,7 +56,10 @@ internal sealed class LinuxGlobalHotkeyService : IGlobalHotkeyService
         {
             foreach (var keycode in _keycodes.Keys)
             {
-                LinuxNative.XUngrabKey(_display, (int)keycode, ControlMask | Mod1Mask, _rootWindow);
+                foreach (var ignoredModifiers in IgnoredModifierMasks)
+                {
+                    LinuxNative.XUngrabKey(_display, (int)keycode, ControlMask | Mod1Mask | ignoredModifiers, _rootWindow);
+                }
             }
 
             LinuxNative.XCloseDisplay(_display);
@@ -67,7 +80,10 @@ internal sealed class LinuxGlobalHotkeyService : IGlobalHotkeyService
         }
 
         _keycodes[keycode] = hotkey;
-        LinuxNative.XGrabKey(_display, (int)keycode, ControlMask | Mod1Mask, _rootWindow, true, 1, 1);
+        foreach (var ignoredModifiers in IgnoredModifierMasks)
+        {
+            LinuxNative.XGrabKey(_display, (int)keycode, ControlMask | Mod1Mask | ignoredModifiers, _rootWindow, true, 1, 1);
+        }
     }
 
     private void EventLoop()
@@ -182,13 +198,50 @@ internal sealed class LinuxSelectionCaptureService : ISelectionCaptureService
 
 internal sealed class LinuxTextOutputService : ITextOutputService
 {
-    private const int ControlMask = 1 << 2;
-    private const int Mod1Mask = 1 << 3;
     private const uint ShiftKeysym = 0xffe1;
+    private const uint ControlLeftKeysym = 0xffe3;
+    private const uint ControlRightKeysym = 0xffe4;
+    private const uint AltLeftKeysym = 0xffe9;
+    private const uint AltRightKeysym = 0xffea;
 
-    public Task WaitForTypeHotkeyReleaseAsync(CancellationToken cancellationToken)
+    public async Task WaitForTypeHotkeyReleaseAsync(CancellationToken cancellationToken)
     {
-        return Task.Delay(120, cancellationToken);
+        var display = LinuxNative.XOpenDisplay(IntPtr.Zero);
+        if (display == IntPtr.Zero)
+        {
+            await Task.Delay(120, cancellationToken);
+            return;
+        }
+
+        try
+        {
+            var watchedKeycodes = new[]
+            {
+                LinuxNative.XKeysymToKeycode(display, LinuxNative.XStringToKeysym("v")),
+                LinuxNative.XKeysymToKeycode(display, ControlLeftKeysym),
+                LinuxNative.XKeysymToKeycode(display, ControlRightKeysym),
+                LinuxNative.XKeysymToKeycode(display, AltLeftKeysym),
+                LinuxNative.XKeysymToKeycode(display, AltRightKeysym)
+            }.Where(keycode => keycode != 0).ToArray();
+
+            var keymap = new byte[32];
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                LinuxNative.XQueryKeymap(display, keymap);
+
+                if (!watchedKeycodes.Any(keycode => IsKeyDown(keymap, keycode)))
+                {
+                    return;
+                }
+
+                await Task.Delay(20, cancellationToken);
+            }
+        }
+        finally
+        {
+            LinuxNative.XCloseDisplay(display);
+        }
     }
 
     public async Task TypeTextAsync(string text, int delayMs, CancellationToken cancellationToken, IProgress<int>? progress = null)
@@ -287,6 +340,13 @@ internal sealed class LinuxTextOutputService : ITextOutputService
         needsShift = char.IsUpper(character) || "!@#$%^&*()_+{}:\"<>?|~".Contains(character);
         return keysym != 0;
     }
+
+    private static bool IsKeyDown(byte[] keymap, uint keycode)
+    {
+        var index = keycode / 8;
+        var mask = 1 << (int)(keycode % 8);
+        return index < keymap.Length && (keymap[index] & mask) != 0;
+    }
 }
 
 internal static class LinuxNative
@@ -320,6 +380,9 @@ internal static class LinuxNative
 
     [DllImport("libX11")]
     public static extern int XFlush(IntPtr display);
+
+    [DllImport("libX11")]
+    public static extern int XQueryKeymap(IntPtr display, byte[] keysReturn);
 
     [DllImport("libX11")]
     public static extern IntPtr XInternAtom(IntPtr display, string atomName, bool onlyIfExists);

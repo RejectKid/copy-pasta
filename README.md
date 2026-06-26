@@ -24,11 +24,14 @@ Linux support currently targets X11. Wayland does not expose a general global ho
 
 ## Hotkeys
 
-- `Ctrl+Alt+C`: capture the current selection
-- `Ctrl+Alt+V`: type the selected history item
-- `Ctrl+Alt+X`: stop typing
+| Platform | Capture | Type selected item | Stop typing |
+| --- | --- | --- | --- |
+| Windows and Linux | `Ctrl+Alt+C` | `Ctrl+Alt+V` | `Ctrl+Alt+X` |
+| macOS | `Command+Option+C` | `Command+Option+V` | `Command+Option+X` |
 
-Copy Pasta does not auto-capture. Capture only runs when you press `Ctrl+Alt+C`.
+On macOS, the older `Control+Option` variants are also accepted.
+
+Copy Pasta does not auto-capture. Capture only runs when you press the platform capture hotkey.
 
 ## Notes
 
