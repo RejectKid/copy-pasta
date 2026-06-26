@@ -4,7 +4,8 @@ $ErrorActionPreference = 'Stop'
 $keys = @(
     'Software\Classes\*\shell\CopyPasta',
     'Software\Classes\Directory\shell\CopyPasta',
-    'Software\Classes\Directory\Background\shell\CopyPasta'
+    'Software\Classes\Directory\Background\shell\CopyPasta',
+    'Software\Classes\DesktopBackground\shell\CopyPasta'
 )
 
 foreach ($key in $keys) {

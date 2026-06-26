@@ -532,6 +532,10 @@ internal sealed class WindowsContextMenuIntegrationService : IContextMenuIntegra
         new(
             @"Software\Classes\Directory\Background\shell\CopyPasta",
             "Add current folder to Copy Pasta",
+            "%V"),
+        new(
+            @"Software\Classes\DesktopBackground\shell\CopyPasta",
+            "Add desktop folder to Copy Pasta",
             "%V")
     ];
 
@@ -545,8 +549,8 @@ internal sealed class WindowsContextMenuIntegrationService : IContextMenuIntegra
             isInstalled,
             "Windows Explorer",
             isInstalled
-                ? "Explorer context menus are installed for the current user."
-                : "Explorer context menus are not installed for the current user.");
+                ? "Explorer context menus are installed for the current user. On Windows 11, they appear under Show more options."
+                : "Explorer context menus are not installed for the current user. On Windows 11, installed entries appear under Show more options.");
     }
 
     public ContextMenuIntegrationResult Install()

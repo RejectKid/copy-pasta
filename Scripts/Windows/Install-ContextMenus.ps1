@@ -68,6 +68,11 @@ $items = @(
         SubKey = 'Software\Classes\Directory\Background\shell\CopyPasta'
         Label = 'Add current folder to Copy Pasta'
         Argument = '%V'
+    },
+    @{
+        SubKey = 'Software\Classes\DesktopBackground\shell\CopyPasta'
+        Label = 'Add desktop folder to Copy Pasta'
+        Argument = '%V'
     }
 )
 

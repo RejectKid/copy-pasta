@@ -50,6 +50,8 @@ The context menu entries add the selected path to Copy Pasta history:
 - macOS: Finder Quick Action under `~/Library/Services`
 - Linux: Nautilus scripts, Nemo actions/scripts, Caja scripts, and Dolphin service menus under the current user's home directory
 
+On Windows 11, Explorer shows these classic context menu entries under `Show more options`.
+
 The app command behind each integration is:
 
 ```text
