@@ -10,6 +10,10 @@ namespace CopyPasta;
 public partial class MainWindow : Window
 {
     private const int DefaultTypingDelayMs = 12;
+    private static readonly bool IsMacOS = RuntimeInformation.IsOSPlatform(OSPlatform.OSX);
+    private static readonly string CaptureHotkeyText = IsMacOS ? "Cmd+Opt+C" : "Ctrl+Alt+C";
+    private static readonly string TypeHotkeyText = IsMacOS ? "Cmd+Opt+V" : "Ctrl+Alt+V";
+    private static readonly string StopHotkeyText = IsMacOS ? "Cmd+Opt+X" : "Ctrl+Alt+X";
 
     private readonly HistoryStore _historyStore = new();
     private readonly ObservableCollection<HistoryEntry> _history = [];
@@ -25,9 +29,7 @@ public partial class MainWindow : Window
         InitializeComponent();
 
         HistoryList.ItemsSource = _history;
-        HotkeyHelpText.Text = RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
-            ? "Cmd+Opt+C capture | Cmd+Opt+V type | Cmd+Opt+X stop"
-            : "Ctrl+Alt+C capture | Ctrl+Alt+V type | Ctrl+Alt+X stop";
+        HotkeyHelpText.Text = $"{CaptureHotkeyText} capture | {TypeHotkeyText} type | {StopHotkeyText} stop";
 
         LoadHistory();
 
@@ -181,7 +183,7 @@ public partial class MainWindow : Window
 
         try
         {
-            SetStatus("Release Ctrl+Alt+V to continue.");
+            SetStatus($"Release {TypeHotkeyText} to continue.");
             await _textOutput.WaitForTypeHotkeyReleaseAsync(_typingCancellation.Token);
 
             var lastProgress = 0;
