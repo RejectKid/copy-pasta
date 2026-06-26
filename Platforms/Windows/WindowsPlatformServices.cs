@@ -5,6 +5,7 @@ using System.Text;
 using System.Windows.Automation;
 using Avalonia.Controls;
 using Avalonia.Platform;
+using Microsoft.Win32;
 
 namespace CopyPasta;
 
@@ -15,6 +16,8 @@ internal static class PlatformServicesFactory
     public static ISelectionCaptureService CreateSelectionCaptureService() => new WindowsSelectionCaptureService();
 
     public static ITextOutputService CreateTextOutputService() => new WindowsTextOutputService();
+
+    public static IContextMenuIntegrationService CreateContextMenuIntegrationService() => new WindowsContextMenuIntegrationService();
 }
 
 internal sealed class WindowsGlobalHotkeyService : IGlobalHotkeyService
@@ -512,4 +515,112 @@ internal sealed class WindowsTextOutputService : ITextOutputService
     {
         return (NativeMethods.GetAsyncKeyState(virtualKey) & 0x8000) != 0;
     }
+}
+
+internal sealed class WindowsContextMenuIntegrationService : IContextMenuIntegrationService
+{
+    private static readonly ContextMenuEntry[] Entries =
+    [
+        new(
+            @"Software\Classes\*\shell\CopyPasta",
+            "Add file path to Copy Pasta",
+            "%1"),
+        new(
+            @"Software\Classes\Directory\shell\CopyPasta",
+            "Add folder path to Copy Pasta",
+            "%V"),
+        new(
+            @"Software\Classes\Directory\Background\shell\CopyPasta",
+            "Add current folder to Copy Pasta",
+            "%V")
+    ];
+
+    public ContextMenuIntegrationStatus GetStatus()
+    {
+        var isInstalled = Entries.All(entry =>
+            string.Equals(ReadDefaultValue($@"{entry.SubKey}\command"), CommandValue(entry.Argument), StringComparison.OrdinalIgnoreCase));
+
+        return new ContextMenuIntegrationStatus(
+            true,
+            isInstalled,
+            "Windows Explorer",
+            isInstalled
+                ? "Explorer context menus are installed for the current user."
+                : "Explorer context menus are not installed for the current user.");
+    }
+
+    public ContextMenuIntegrationResult Install()
+    {
+        try
+        {
+            var appPath = AppCommand.ResolveExecutablePath();
+            var iconValue = $"\"{appPath}\",0";
+
+            foreach (var entry in Entries)
+            {
+                SetString(entry.SubKey, string.Empty, entry.Label);
+                SetString(entry.SubKey, "Icon", iconValue);
+                SetString(entry.SubKey, "NoWorkingDirectory", string.Empty);
+                SetString($@"{entry.SubKey}\command", string.Empty, CommandValue(entry.Argument));
+            }
+
+            return new ContextMenuIntegrationResult(true, "Installed Explorer context menus for the current user.");
+        }
+        catch (Exception ex)
+        {
+            return new ContextMenuIntegrationResult(false, $"Could not install Explorer context menus: {ex.Message}");
+        }
+    }
+
+    public ContextMenuIntegrationResult Uninstall()
+    {
+        try
+        {
+            foreach (var entry in Entries)
+            {
+                var exists = false;
+                using (var existingKey = Registry.CurrentUser.OpenSubKey(entry.SubKey))
+                {
+                    exists = existingKey is not null;
+                }
+
+                if (!exists)
+                {
+                    continue;
+                }
+
+                Registry.CurrentUser.DeleteSubKeyTree(entry.SubKey);
+            }
+
+            return new ContextMenuIntegrationResult(true, "Removed Explorer context menus for the current user.");
+        }
+        catch (Exception ex)
+        {
+            return new ContextMenuIntegrationResult(false, $"Could not remove Explorer context menus: {ex.Message}");
+        }
+    }
+
+    private static string CommandValue(string argument)
+    {
+        return $"\"{AppCommand.ResolveExecutablePath()}\" {AppCommand.AddToHistoryOption} \"{argument}\"";
+    }
+
+    private static string? ReadDefaultValue(string subKey)
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(subKey);
+        return key?.GetValue(string.Empty) as string;
+    }
+
+    private static void SetString(string subKey, string name, string value)
+    {
+        using var key = Registry.CurrentUser.CreateSubKey(subKey);
+        if (key is null)
+        {
+            throw new InvalidOperationException($"Could not open HKCU\\{subKey}.");
+        }
+
+        key.SetValue(name, value, RegistryValueKind.String);
+    }
+
+    private sealed record ContextMenuEntry(string SubKey, string Label, string Argument);
 }

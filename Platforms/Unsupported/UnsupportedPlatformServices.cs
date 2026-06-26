@@ -49,6 +49,21 @@ internal static class PlatformServicesFactory
 
         return new UnsupportedTextOutputService("Text output is not implemented for this platform.");
     }
+
+    public static IContextMenuIntegrationService CreateContextMenuIntegrationService()
+    {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+        {
+            return new MacOSContextMenuIntegrationService();
+        }
+
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        {
+            return new LinuxContextMenuIntegrationService();
+        }
+
+        return new UnsupportedContextMenuIntegrationService("Context menus are not implemented for this platform.");
+    }
 }
 
 internal sealed class UnsupportedGlobalHotkeyService : IGlobalHotkeyService
@@ -110,5 +125,30 @@ internal sealed class UnsupportedTextOutputService : ITextOutputService
     public Task TypeTextAsync(string text, int delayMs, CancellationToken cancellationToken, IProgress<int>? progress = null)
     {
         throw new PlatformNotSupportedException(_message);
+    }
+}
+
+internal sealed class UnsupportedContextMenuIntegrationService : IContextMenuIntegrationService
+{
+    private readonly string _message;
+
+    public UnsupportedContextMenuIntegrationService(string message)
+    {
+        _message = message;
+    }
+
+    public ContextMenuIntegrationStatus GetStatus()
+    {
+        return new ContextMenuIntegrationStatus(false, false, "Context menus", _message);
+    }
+
+    public ContextMenuIntegrationResult Install()
+    {
+        return new ContextMenuIntegrationResult(false, _message);
+    }
+
+    public ContextMenuIntegrationResult Uninstall()
+    {
+        return new ContextMenuIntegrationResult(false, _message);
     }
 }

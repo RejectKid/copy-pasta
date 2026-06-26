@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Interactivity;
+using Avalonia.Layout;
 using Avalonia.Media;
 
 namespace CopyPasta;
@@ -14,6 +16,7 @@ public partial class MainWindow : Window
     private readonly IGlobalHotkeyService _hotkeys = PlatformServices.CreateHotkeyService();
     private readonly ISelectionCaptureService _selectionCapture = PlatformServices.CreateSelectionCaptureService();
     private readonly ITextOutputService _textOutput = PlatformServices.CreateTextOutputService();
+    private readonly IContextMenuIntegrationService _contextMenus = PlatformServices.CreateContextMenuIntegrationService();
 
     private bool _isTyping;
     private CancellationTokenSource? _typingCancellation;
@@ -71,6 +74,11 @@ public partial class MainWindow : Window
     private void ClearButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         ClearHistory();
+    }
+
+    private async void ContextMenusButton_Click(object? sender, RoutedEventArgs e)
+    {
+        await ShowContextMenuSettingsAsync();
     }
 
     private void HistoryList_SelectionChanged(object? sender, SelectionChangedEventArgs e)
@@ -159,6 +167,102 @@ public partial class MainWindow : Window
         HistoryList.SelectedIndex = 0;
         _historyStore.Save(_history);
         SetStatus($"{action} {DescribeEntry(newEntry)} from {source}.");
+    }
+
+    private async Task ShowContextMenuSettingsAsync()
+    {
+        var titleText = new TextBlock
+        {
+            FontSize = 18,
+            FontWeight = FontWeight.SemiBold
+        };
+        var statusText = new TextBlock
+        {
+            FontWeight = FontWeight.SemiBold
+        };
+        var detailText = new TextBlock
+        {
+            TextWrapping = TextWrapping.Wrap
+        };
+        var installButton = new Button
+        {
+            Content = "Install",
+            MinWidth = 92,
+            Padding = new Thickness(12, 6)
+        };
+        var removeButton = new Button
+        {
+            Content = "Remove",
+            MinWidth = 92,
+            Padding = new Thickness(12, 6)
+        };
+        var closeButton = new Button
+        {
+            Content = "Close",
+            MinWidth = 92,
+            Padding = new Thickness(12, 6)
+        };
+
+        var dialog = new Window
+        {
+            Title = "Context menus",
+            Width = 460,
+            Height = 250,
+            MinWidth = 420,
+            MinHeight = 230,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Content = new StackPanel
+            {
+                Margin = new Thickness(18),
+                Spacing = 10,
+                Children =
+                {
+                    titleText,
+                    statusText,
+                    detailText,
+                    new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal,
+                        HorizontalAlignment = HorizontalAlignment.Right,
+                        Spacing = 8,
+                        Margin = new Thickness(0, 18, 0, 0),
+                        Children =
+                        {
+                            installButton,
+                            removeButton,
+                            closeButton
+                        }
+                    }
+                }
+            }
+        };
+
+        void Refresh()
+        {
+            var status = _contextMenus.GetStatus();
+            titleText.Text = status.Title;
+            statusText.Text = status.IsInstalled ? "Installed" : "Not installed";
+            detailText.Text = status.Detail;
+            installButton.IsEnabled = status.IsSupported;
+            removeButton.IsEnabled = status.IsSupported && status.IsInstalled;
+        }
+
+        installButton.Click += (_, _) =>
+        {
+            var result = _contextMenus.Install();
+            SetStatus(result.Message);
+            Refresh();
+        };
+        removeButton.Click += (_, _) =>
+        {
+            var result = _contextMenus.Uninstall();
+            SetStatus(result.Message);
+            Refresh();
+        };
+        closeButton.Click += (_, _) => dialog.Close();
+
+        Refresh();
+        await dialog.ShowDialog(this);
     }
 
     private async Task TypeSelectedAsync()

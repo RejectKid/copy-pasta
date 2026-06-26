@@ -24,24 +24,24 @@ internal static class Program
 
 internal static class StartupArguments
 {
-    private const string AddToHistoryOption = "--add-to-history";
-
     public static IReadOnlyList<string> GetHistoryTexts(string[] args)
     {
         var historyTexts = new List<string>();
 
         for (var i = 0; i < args.Length; i++)
         {
-            if (!string.Equals(args[i], AddToHistoryOption, StringComparison.OrdinalIgnoreCase) ||
-                i + 1 >= args.Length)
+            if (!string.Equals(args[i], AppCommand.AddToHistoryOption, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
 
-            var text = args[++i];
-            if (!string.IsNullOrWhiteSpace(text))
+            while (i + 1 < args.Length && !args[i + 1].StartsWith("--", StringComparison.Ordinal))
             {
-                historyTexts.Add(text);
+                var text = args[++i];
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    historyTexts.Add(text);
+                }
             }
         }
 

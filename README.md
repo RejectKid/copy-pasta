@@ -9,16 +9,17 @@ The app is intentionally hotkey-driven and does not auto-capture.
 - App-local text history capped at 50 entries
 - No clipboard dependency for capture or typing
 - Character-by-character output through simulated keyboard input
+- Optional file manager context menus for adding selected paths to history
 - Optional text styling metadata capture when the source app exposes it through UI Automation
 - Persistent history under the current user's application data folder
 
 ## Platform Support
 
-| Platform | UI | Global hotkeys | Selection capture | Text output |
-| --- | --- | --- | --- | --- |
-| Windows | Supported | Supported | Supported through UI Automation and native edit controls | Supported through `SendInput` |
-| macOS | Supported | Supported through a keyboard event tap | Supported through Accessibility selected text | Supported through Core Graphics keyboard events |
-| Linux | Supported on X11 | Supported through XGrabKey | Supported through the X11 PRIMARY selection | Supported through XTest keyboard events |
+| Platform | UI | Global hotkeys | Selection capture | Text output | Context menus |
+| --- | --- | --- | --- | --- | --- |
+| Windows | Supported | Supported | Supported through UI Automation and native edit controls | Supported through `SendInput` | Supported through per-user Explorer registry entries |
+| macOS | Supported | Supported through a keyboard event tap | Supported through Accessibility selected text | Supported through Core Graphics keyboard events | Supported through a per-user Finder Quick Action |
+| Linux | Supported on X11 | Supported through XGrabKey | Supported through the X11 PRIMARY selection | Supported through XTest keyboard events | Supported for common file managers through per-user scripts/service menus |
 
 Linux support currently targets X11. Wayland does not expose a general global hotkey, selected-text, or synthetic-keyboard API that this app can use without desktop-environment-specific portals or extensions.
 
@@ -39,35 +40,30 @@ Copy Pasta does not auto-capture. Capture only runs when you press `Ctrl+Alt+C`.
 - Linux requires X11 plus `libX11` and `libXtst`. Text output currently supports common ASCII characters.
 - App icon: [Spaghetti icon](https://www.flaticon.com/free-icon/spaghetti_4465494) by Freepik from Flaticon. Free for personal and commercial use with attribution.
 
-## Windows Explorer Context Menus
+## File Manager Context Menus
 
-Copy Pasta can add Windows Explorer context menu entries for the current user without administrator rights. The installer writes to `HKCU\Software\Classes`, following the same per-user registry location used by tools such as Visual Studio Code.
+Copy Pasta can add file manager context menu entries for the current user without administrator rights. Open Copy Pasta, click `Context menus`, then choose `Install` or `Remove`.
 
-The context menus add the selected path to Copy Pasta history:
+The context menu entries add the selected path to Copy Pasta history:
 
-- Files: `Add file path to Copy Pasta`
-- Folders: `Add folder path to Copy Pasta`
-- Folder background: `Add current folder to Copy Pasta`
+- Windows: Explorer entries under `HKCU\Software\Classes`
+- macOS: Finder Quick Action under `~/Library/Services`
+- Linux: Nautilus scripts, Nemo actions/scripts, Caja scripts, and Dolphin service menus under the current user's home directory
 
-Build or publish the Windows app first, then run:
+The app command behind each integration is:
 
-```powershell
-.\Scripts\Windows\Install-ContextMenus.ps1 -AppPath .\bin\Release\net10.0-windows\win-x64\publish\CopyPasta.exe
+```text
+CopyPasta --add-to-history "<path>"
 ```
 
-If `CopyPasta.exe` is in one of the usual local build or publish folders, `-AppPath` can be omitted:
+The Windows PowerShell scripts are still available for automation:
 
 ```powershell
 .\Scripts\Windows\Install-ContextMenus.ps1
-```
-
-To remove the context menu entries:
-
-```powershell
 .\Scripts\Windows\Uninstall-ContextMenus.ps1
 ```
 
-No elevation is required for either script. If Explorer does not show the entries immediately, restart Explorer or sign out and back in.
+If a context menu does not appear immediately, restart the file manager or sign out and back in.
 
 ## Code Layout
 
