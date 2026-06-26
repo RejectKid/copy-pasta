@@ -42,6 +42,24 @@ Copy Pasta does not auto-capture. Capture only runs when you press the platform 
 - Linux requires X11 plus `libX11` and `libXtst`. Text output currently supports common ASCII characters.
 - App icon: [Spaghetti icon](https://www.flaticon.com/free-icon/spaghetti_4465494) by Freepik from Flaticon. Free for personal and commercial use with attribution.
 
+## Troubleshooting Hotkeys
+
+### macOS
+
+If `Command+Option+C`, `Command+Option+V`, or `Command+Option+X` do nothing:
+
+1. Open System Settings.
+2. Go to Privacy & Security > Accessibility.
+3. Enable Copy Pasta. If you launched the app through `dotnet run`, enable the app that launched it, such as Terminal, iTerm, Visual Studio Code, or Rider.
+4. If hotkeys still do not fire, also enable the same app under Privacy & Security > Input Monitoring.
+5. Quit and reopen Copy Pasta after changing either permission.
+
+The app also accepts `Control+Option+C`, `Control+Option+V`, and `Control+Option+X` on macOS, but `Command+Option` is the preferred Mac shortcut.
+
+### Linux
+
+Linux hotkeys require an X11 session. Wayland sessions do not expose the global hotkey, selected-text, or synthetic-keyboard APIs that Copy Pasta uses. If hotkeys do not fire on Linux, confirm the session is X11 and that `libX11` and `libXtst` are installed.
+
 ## Code Layout
 
 - `Core`: shared history models and platform service contracts
