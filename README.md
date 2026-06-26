@@ -39,6 +39,36 @@ Copy Pasta does not auto-capture. Capture only runs when you press `Ctrl+Alt+C`.
 - Linux requires X11 plus `libX11` and `libXtst`. Text output currently supports common ASCII characters.
 - App icon: [Spaghetti icon](https://www.flaticon.com/free-icon/spaghetti_4465494) by Freepik from Flaticon. Free for personal and commercial use with attribution.
 
+## Windows Explorer Context Menus
+
+Copy Pasta can add Windows Explorer context menu entries for the current user without administrator rights. The installer writes to `HKCU\Software\Classes`, following the same per-user registry location used by tools such as Visual Studio Code.
+
+The context menus add the selected path to Copy Pasta history:
+
+- Files: `Add file path to Copy Pasta`
+- Folders: `Add folder path to Copy Pasta`
+- Folder background: `Add current folder to Copy Pasta`
+
+Build or publish the Windows app first, then run:
+
+```powershell
+.\Scripts\Windows\Install-ContextMenus.ps1 -AppPath .\bin\Release\net10.0-windows\win-x64\publish\CopyPasta.exe
+```
+
+If `CopyPasta.exe` is in one of the usual local build or publish folders, `-AppPath` can be omitted:
+
+```powershell
+.\Scripts\Windows\Install-ContextMenus.ps1
+```
+
+To remove the context menu entries:
+
+```powershell
+.\Scripts\Windows\Uninstall-ContextMenus.ps1
+```
+
+No elevation is required for either script. If Explorer does not show the entries immediately, restart Explorer or sign out and back in.
+
 ## Code Layout
 
 - `Core`: shared history models and platform service contracts

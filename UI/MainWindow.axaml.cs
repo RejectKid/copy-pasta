@@ -24,6 +24,7 @@ public partial class MainWindow : Window
 
         HistoryList.ItemsSource = _history;
         LoadHistory();
+        AddStartupHistoryTexts();
 
         Opened += MainWindow_Opened;
         Closed += MainWindow_Closed;
@@ -91,6 +92,21 @@ public partial class MainWindow : Window
         else
         {
             ShowSelectedPreview();
+        }
+    }
+
+    private void AddStartupHistoryTexts()
+    {
+        foreach (var text in Program.StartupHistoryTexts.Distinct(StringComparer.Ordinal))
+        {
+            AddOrPromoteHistoryEntry(
+                new HistoryEntry
+                {
+                    Text = text,
+                    CapturedAt = DateTimeOffset.Now
+                },
+                "Explorer context menu",
+                "Added");
         }
     }
 
