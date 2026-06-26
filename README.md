@@ -9,27 +9,30 @@ The app is intentionally hotkey-driven and does not auto-capture.
 - App-local text history capped at 50 entries
 - No clipboard dependency for capture or typing
 - Character-by-character output through simulated keyboard input
-- Optional file manager context menus for adding selected paths to history
+- Quick Palette at the cursor for capture, typing, stopping, and recent history
 - Optional text styling metadata capture when the source app exposes it through UI Automation
 - Persistent history under the current user's application data folder
 
 ## Platform Support
 
-| Platform | UI | Global hotkeys | Selection capture | Text output | Context menus |
+| Platform | UI | Global hotkeys | Selection capture | Text output | Quick Palette |
 | --- | --- | --- | --- | --- | --- |
-| Windows | Supported | Supported | Supported through UI Automation and native edit controls | Supported through `SendInput` | Supported through per-user Explorer registry entries |
-| macOS | Supported | Supported through a keyboard event tap | Supported through Accessibility selected text | Supported through Core Graphics keyboard events | Supported through a per-user Finder Quick Action |
-| Linux | Supported on X11 | Supported through XGrabKey | Supported through the X11 PRIMARY selection | Supported through XTest keyboard events | Supported for common file managers through per-user scripts/service menus |
+| Windows | Supported | Supported | Supported through UI Automation and native edit controls | Supported through `SendInput` | Supported |
+| macOS | Supported | Supported through a keyboard event tap | Supported through Accessibility selected text | Supported through Core Graphics keyboard events | Supported |
+| Linux | Supported on X11 | Supported through XGrabKey | Supported through the X11 PRIMARY selection | Supported through XTest keyboard events | Supported on X11 |
 
 Linux support currently targets X11. Wayland does not expose a general global hotkey, selected-text, or synthetic-keyboard API that this app can use without desktop-environment-specific portals or extensions.
 
 ## Hotkeys
 
+- `Ctrl+Alt+Space`: open the Quick Palette at the cursor
 - `Ctrl+Alt+C`: capture the current selection
 - `Ctrl+Alt+V`: type the selected history item
 - `Ctrl+Alt+X`: stop typing
 
-Copy Pasta does not auto-capture. Capture only runs when you press `Ctrl+Alt+C`.
+On macOS, use `Command+Option` or `Control+Option` with the same keys.
+
+Copy Pasta does not auto-capture. Capture only runs from the capture hotkey or the Quick Palette.
 
 ## Notes
 
@@ -40,32 +43,11 @@ Copy Pasta does not auto-capture. Capture only runs when you press `Ctrl+Alt+C`.
 - Linux requires X11 plus `libX11` and `libXtst`. Text output currently supports common ASCII characters.
 - App icon: [Spaghetti icon](https://www.flaticon.com/free-icon/spaghetti_4465494) by Freepik from Flaticon. Free for personal and commercial use with attribution.
 
-## File Manager Context Menus
+## Quick Palette
 
-Copy Pasta can add file manager context menu entries for the current user without administrator rights. Open Copy Pasta, click `Context menus`, then choose `Install` or `Remove`.
+The Quick Palette is an adminless alternative to global text context menus. Press `Ctrl+Alt+Space` near the text you are working with to open a small palette at the cursor. From there you can capture the current selection, type the selected history item, stop typing, or choose a recent history item.
 
-The context menu entries add the selected path to Copy Pasta history:
-
-- Windows: Explorer entries under `HKCU\Software\Classes`
-- macOS: Finder Quick Action under `~/Library/Services`
-- Linux: Nautilus scripts, Nemo actions/scripts, Caja scripts, and Dolphin service menus under the current user's home directory
-
-On Windows 11, Explorer shows these classic context menu entries under `Show more options`.
-
-The app command behind each integration is:
-
-```text
-CopyPasta --add-to-history "<path>"
-```
-
-The Windows PowerShell scripts are still available for automation:
-
-```powershell
-.\Scripts\Windows\Install-ContextMenus.ps1
-.\Scripts\Windows\Uninstall-ContextMenus.ps1
-```
-
-If a context menu does not appear immediately, restart the file manager or sign out and back in.
+Operating systems do not provide a universal no-admin way to inject actions into every app's selected-text or paste context menu. The Quick Palette keeps the same near-cursor workflow without app-specific plugins or elevated hooks.
 
 ## Code Layout
 

@@ -32,6 +32,7 @@ internal sealed class LinuxGlobalHotkeyService : IGlobalHotkeyService
         RegisterHotkey("c", CopyPastaHotkey.Capture);
         RegisterHotkey("v", CopyPastaHotkey.Type);
         RegisterHotkey("x", CopyPastaHotkey.Stop);
+        RegisterHotkey("space", CopyPastaHotkey.Palette);
         LinuxNative.XSync(_display, false);
 
         _messagePump = Task.Run(EventLoop);
@@ -289,203 +290,42 @@ internal sealed class LinuxTextOutputService : ITextOutputService
     }
 }
 
-internal sealed class LinuxContextMenuIntegrationService : IContextMenuIntegrationService
+internal sealed class LinuxCursorPositionService : ICursorPositionService
 {
-    private const string MenuName = "Add to Copy Pasta";
-    private const string DesktopFileName = "copy-pasta-add-to-history.desktop";
-
-    private static string HomeDirectory =>
-        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) is { Length: > 0 } home
-            ? home
-            : Environment.GetEnvironmentVariable("HOME") ?? string.Empty;
-
-    private static string WrapperPath => Path.Combine(HomeDirectory, ".local", "share", "copy-pasta", "add-to-history");
-
-    private static string[] IntegrationFiles =>
-    [
-        WrapperPath,
-        Path.Combine(HomeDirectory, ".local", "share", "nautilus", "scripts", MenuName),
-        Path.Combine(HomeDirectory, ".local", "share", "nemo", "scripts", MenuName),
-        Path.Combine(HomeDirectory, ".local", "share", "nemo", "actions", "copy-pasta.nemo_action"),
-        Path.Combine(HomeDirectory, ".config", "caja", "scripts", MenuName),
-        Path.Combine(HomeDirectory, ".local", "share", "kio", "servicemenus", DesktopFileName),
-        Path.Combine(HomeDirectory, ".local", "share", "kservices5", "ServiceMenus", DesktopFileName)
-    ];
-
-    public ContextMenuIntegrationStatus GetStatus()
+    public bool TryGetCursorPosition(out int x, out int y)
     {
-        var isInstalled = IntegrationFiles.All(File.Exists);
+        var display = LinuxNative.XOpenDisplay(IntPtr.Zero);
+        if (display == IntPtr.Zero)
+        {
+            x = 0;
+            y = 0;
+            return false;
+        }
 
-        return new ContextMenuIntegrationStatus(
-            true,
-            isInstalled,
-            "Linux file managers",
-            isInstalled
-                ? "File manager context menu entries are installed for the current user."
-                : "File manager context menu entries are not installed for the current user.");
-    }
-
-    public ContextMenuIntegrationResult Install()
-    {
         try
         {
-            if (string.IsNullOrWhiteSpace(HomeDirectory))
-            {
-                return new ContextMenuIntegrationResult(false, "Could not resolve the current user's home directory.");
-            }
+            var root = LinuxNative.XDefaultRootWindow(display);
+            var success = LinuxNative.XQueryPointer(
+                display,
+                root,
+                out _,
+                out _,
+                out var rootX,
+                out var rootY,
+                out _,
+                out _,
+                out _) != 0;
 
-            WriteExecutableFile(WrapperPath, CreateWrapperScript());
-            WriteExecutableFile(Path.Combine(HomeDirectory, ".local", "share", "nautilus", "scripts", MenuName), CreateScriptMenuLauncher());
-            WriteExecutableFile(Path.Combine(HomeDirectory, ".local", "share", "nemo", "scripts", MenuName), CreateScriptMenuLauncher());
-            WriteTextFile(Path.Combine(HomeDirectory, ".local", "share", "nemo", "actions", "copy-pasta.nemo_action"), CreateNemoAction());
-            WriteExecutableFile(Path.Combine(HomeDirectory, ".config", "caja", "scripts", MenuName), CreateScriptMenuLauncher());
-            WriteExecutableFile(Path.Combine(HomeDirectory, ".local", "share", "kio", "servicemenus", DesktopFileName), CreateDolphinServiceMenu());
-            WriteExecutableFile(Path.Combine(HomeDirectory, ".local", "share", "kservices5", "ServiceMenus", DesktopFileName), CreateDolphinServiceMenu());
-
-            return new ContextMenuIntegrationResult(true, "Installed Linux file manager context menus for the current user.");
+            x = rootX;
+            y = rootY;
+            return success;
         }
-        catch (Exception ex)
+        finally
         {
-            return new ContextMenuIntegrationResult(false, $"Could not install Linux context menus: {ex.Message}");
+            LinuxNative.XCloseDisplay(display);
         }
-    }
-
-    public ContextMenuIntegrationResult Uninstall()
-    {
-        try
-        {
-            foreach (var file in IntegrationFiles)
-            {
-                if (File.Exists(file))
-                {
-                    File.Delete(file);
-                }
-            }
-
-            var wrapperDirectory = Path.GetDirectoryName(WrapperPath);
-            if (!string.IsNullOrEmpty(wrapperDirectory) &&
-                Directory.Exists(wrapperDirectory) &&
-                !Directory.EnumerateFileSystemEntries(wrapperDirectory).Any())
-            {
-                Directory.Delete(wrapperDirectory);
-            }
-
-            return new ContextMenuIntegrationResult(true, "Removed Linux file manager context menus for the current user.");
-        }
-        catch (Exception ex)
-        {
-            return new ContextMenuIntegrationResult(false, $"Could not remove Linux context menus: {ex.Message}");
-        }
-    }
-
-    private static string CreateWrapperScript()
-    {
-        var appPath = ShellQuote(AppCommand.ResolveExecutablePath());
-        return $$"""
-#!/bin/sh
-APP={{appPath}}
-
-run_env_paths() {
-    if [ -n "$1" ]; then
-        printf '%s\n' "$1" | while IFS= read -r path; do
-            [ -n "$path" ] && "$APP" {{AppCommand.AddToHistoryOption}} "$path"
-        done
-        exit 0
-    fi
-}
-
-if [ "$#" -gt 0 ]; then
-    exec "$APP" {{AppCommand.AddToHistoryOption}} "$@"
-fi
-
-run_env_paths "$NAUTILUS_SCRIPT_SELECTED_FILE_PATHS"
-run_env_paths "$NEMO_SCRIPT_SELECTED_FILE_PATHS"
-run_env_paths "$CAJA_SCRIPT_SELECTED_FILE_PATHS"
-
-if [ -n "$PWD" ]; then
-    exec "$APP" {{AppCommand.AddToHistoryOption}} "$PWD"
-fi
-""";
-    }
-
-    private static string CreateScriptMenuLauncher()
-    {
-        return $$"""
-#!/bin/sh
-exec {{ShellQuote(WrapperPath)}} "$@"
-""";
-    }
-
-    private static string CreateNemoAction()
-    {
-        return $$"""
-[Nemo Action]
-Name={{MenuName}}
-Comment=Add selected path to Copy Pasta history
-Exec={{DesktopQuote(WrapperPath)}} %F
-Selection=any
-Extensions=any;
-Icon-Name=edit-paste
-""";
-    }
-
-    private static string CreateDolphinServiceMenu()
-    {
-        return $$"""
-[Desktop Entry]
-Type=Service
-MimeType=all/all;inode/directory;
-Actions=addToCopyPasta;
-ServiceTypes=KonqPopupMenu/Plugin
-X-KDE-ServiceTypes=KonqPopupMenu/Plugin
-X-KDE-Priority=TopLevel
-
-[Desktop Action addToCopyPasta]
-Name={{MenuName}}
-Icon=edit-paste
-Exec={{DesktopQuote(WrapperPath)}} %F
-""";
-    }
-
-    private static void WriteTextFile(string path, string content)
-    {
-        var directory = Path.GetDirectoryName(path);
-        if (!string.IsNullOrEmpty(directory))
-        {
-            Directory.CreateDirectory(directory);
-        }
-
-        File.WriteAllText(path, content.Replace("\r\n", "\n", StringComparison.Ordinal));
-    }
-
-    private static void WriteExecutableFile(string path, string content)
-    {
-        WriteTextFile(path, content);
-        if (!OperatingSystem.IsWindows())
-        {
-            File.SetUnixFileMode(
-                path,
-                UnixFileMode.UserRead |
-                UnixFileMode.UserWrite |
-                UnixFileMode.UserExecute |
-                UnixFileMode.GroupRead |
-                UnixFileMode.GroupExecute |
-                UnixFileMode.OtherRead |
-                UnixFileMode.OtherExecute);
-        }
-    }
-
-    private static string ShellQuote(string value)
-    {
-        return $"'{value.Replace("'", "'\"'\"'", StringComparison.Ordinal)}'";
-    }
-
-    private static string DesktopQuote(string value)
-    {
-        return $"\"{value.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal)}\"";
     }
 }
-
 internal static class LinuxNative
 {
     [DllImport("libX11")]
@@ -517,6 +357,9 @@ internal static class LinuxNative
 
     [DllImport("libX11")]
     public static extern int XFlush(IntPtr display);
+
+    [DllImport("libX11")]
+    public static extern int XQueryPointer(IntPtr display, IntPtr window, out IntPtr rootReturn, out IntPtr childReturn, out int rootXReturn, out int rootYReturn, out int winXReturn, out int winYReturn, out uint maskReturn);
 
     [DllImport("libX11")]
     public static extern IntPtr XInternAtom(IntPtr display, string atomName, bool onlyIfExists);

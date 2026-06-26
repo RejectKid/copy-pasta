@@ -22,11 +22,12 @@
                         Padding="12,6"
                         Margin="0,0,12,8"
                         Click="ClearButton_Click" />
-                <Button Content="Context menus"
+                <Button Content="Palette"
                         Padding="12,6"
                         Margin="0,0,12,8"
-                        Click="ContextMenusButton_Click" />
-                <TextBlock Text="Ctrl+Alt+C capture | Ctrl+Alt+V type | Ctrl+Alt+X stop"
+                        Click="PaletteButton_Click" />
+                <TextBlock x:Name="HotkeyHelpText"
+                           Text="Ctrl+Alt+Space palette | Ctrl+Alt+C capture | Ctrl+Alt+V type | Ctrl+Alt+X stop"
                            VerticalAlignment="Center"
                            Margin="0,0,0,8" />
             </WrapPanel>

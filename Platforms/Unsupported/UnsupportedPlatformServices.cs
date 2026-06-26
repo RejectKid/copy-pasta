@@ -50,19 +50,19 @@ internal static class PlatformServicesFactory
         return new UnsupportedTextOutputService("Text output is not implemented for this platform.");
     }
 
-    public static IContextMenuIntegrationService CreateContextMenuIntegrationService()
+    public static ICursorPositionService CreateCursorPositionService()
     {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {
-            return new MacOSContextMenuIntegrationService();
+            return new MacOSCursorPositionService();
         }
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
-            return new LinuxContextMenuIntegrationService();
+            return new LinuxCursorPositionService();
         }
 
-        return new UnsupportedContextMenuIntegrationService("Context menus are not implemented for this platform.");
+        return new UnsupportedCursorPositionService();
     }
 }
 
@@ -128,27 +128,12 @@ internal sealed class UnsupportedTextOutputService : ITextOutputService
     }
 }
 
-internal sealed class UnsupportedContextMenuIntegrationService : IContextMenuIntegrationService
+internal sealed class UnsupportedCursorPositionService : ICursorPositionService
 {
-    private readonly string _message;
-
-    public UnsupportedContextMenuIntegrationService(string message)
+    public bool TryGetCursorPosition(out int x, out int y)
     {
-        _message = message;
-    }
-
-    public ContextMenuIntegrationStatus GetStatus()
-    {
-        return new ContextMenuIntegrationStatus(false, false, "Context menus", _message);
-    }
-
-    public ContextMenuIntegrationResult Install()
-    {
-        return new ContextMenuIntegrationResult(false, _message);
-    }
-
-    public ContextMenuIntegrationResult Uninstall()
-    {
-        return new ContextMenuIntegrationResult(false, _message);
+        x = 0;
+        y = 0;
+        return false;
     }
 }

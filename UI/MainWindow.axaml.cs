@@ -1,33 +1,40 @@
 using System.Collections.ObjectModel;
+using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
-using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Threading;
 
 namespace CopyPasta;
 
 public partial class MainWindow : Window
 {
     private const int DefaultTypingDelayMs = 12;
+    private static readonly bool IsMacOS = RuntimeInformation.IsOSPlatform(OSPlatform.OSX);
+    private static readonly string PaletteHotkeyText = IsMacOS ? "Cmd+Opt+Space" : "Ctrl+Alt+Space";
+    private static readonly string CaptureHotkeyText = IsMacOS ? "Cmd+Opt+C" : "Ctrl+Alt+C";
+    private static readonly string TypeHotkeyText = IsMacOS ? "Cmd+Opt+V" : "Ctrl+Alt+V";
+    private static readonly string StopHotkeyText = IsMacOS ? "Cmd+Opt+X" : "Ctrl+Alt+X";
 
     private readonly HistoryStore _historyStore = new();
     private readonly ObservableCollection<HistoryEntry> _history = [];
     private readonly IGlobalHotkeyService _hotkeys = PlatformServices.CreateHotkeyService();
     private readonly ISelectionCaptureService _selectionCapture = PlatformServices.CreateSelectionCaptureService();
     private readonly ITextOutputService _textOutput = PlatformServices.CreateTextOutputService();
-    private readonly IContextMenuIntegrationService _contextMenus = PlatformServices.CreateContextMenuIntegrationService();
+    private readonly ICursorPositionService _cursorPosition = PlatformServices.CreateCursorPositionService();
 
     private bool _isTyping;
     private CancellationTokenSource? _typingCancellation;
+    private QuickPaletteWindow? _palette;
 
     public MainWindow()
     {
         InitializeComponent();
 
         HistoryList.ItemsSource = _history;
+        HotkeyHelpText.Text = $"{PaletteHotkeyText} palette | {CaptureHotkeyText} capture | {TypeHotkeyText} type | {StopHotkeyText} stop";
         LoadHistory();
-        AddStartupHistoryTexts();
 
         Opened += MainWindow_Opened;
         Closed += MainWindow_Closed;
@@ -52,6 +59,17 @@ public partial class MainWindow : Window
 
     private void Hotkeys_HotkeyPressed(object? sender, CopyPastaHotkey hotkey)
     {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(() => HandleHotkey(hotkey));
+            return;
+        }
+
+        HandleHotkey(hotkey);
+    }
+
+    private void HandleHotkey(CopyPastaHotkey hotkey)
+    {
         switch (hotkey)
         {
             case CopyPastaHotkey.Capture:
@@ -62,6 +80,9 @@ public partial class MainWindow : Window
                 break;
             case CopyPastaHotkey.Stop:
                 StopTyping();
+                break;
+            case CopyPastaHotkey.Palette:
+                ShowQuickPalette();
                 break;
         }
     }
@@ -76,9 +97,9 @@ public partial class MainWindow : Window
         ClearHistory();
     }
 
-    private async void ContextMenusButton_Click(object? sender, RoutedEventArgs e)
+    private void PaletteButton_Click(object? sender, RoutedEventArgs e)
     {
-        await ShowContextMenuSettingsAsync();
+        ShowQuickPalette();
     }
 
     private void HistoryList_SelectionChanged(object? sender, SelectionChangedEventArgs e)
@@ -100,21 +121,6 @@ public partial class MainWindow : Window
         else
         {
             ShowSelectedPreview();
-        }
-    }
-
-    private void AddStartupHistoryTexts()
-    {
-        foreach (var text in Program.StartupHistoryTexts.Distinct(StringComparer.Ordinal))
-        {
-            AddOrPromoteHistoryEntry(
-                new HistoryEntry
-                {
-                    Text = text,
-                    CapturedAt = DateTimeOffset.Now
-                },
-                "Explorer context menu",
-                "Added");
         }
     }
 
@@ -169,100 +175,63 @@ public partial class MainWindow : Window
         SetStatus($"{action} {DescribeEntry(newEntry)} from {source}.");
     }
 
-    private async Task ShowContextMenuSettingsAsync()
+    private void ShowQuickPalette()
     {
-        var titleText = new TextBlock
+        if (_palette is not null)
         {
-            FontSize = 18,
-            FontWeight = FontWeight.SemiBold
-        };
-        var statusText = new TextBlock
-        {
-            FontWeight = FontWeight.SemiBold
-        };
-        var detailText = new TextBlock
-        {
-            TextWrapping = TextWrapping.Wrap
-        };
-        var installButton = new Button
-        {
-            Content = "Install",
-            MinWidth = 92,
-            Padding = new Thickness(12, 6)
-        };
-        var removeButton = new Button
-        {
-            Content = "Remove",
-            MinWidth = 92,
-            Padding = new Thickness(12, 6)
-        };
-        var closeButton = new Button
-        {
-            Content = "Close",
-            MinWidth = 92,
-            Padding = new Thickness(12, 6)
-        };
-
-        var dialog = new Window
-        {
-            Title = "Context menus",
-            Width = 460,
-            Height = 250,
-            MinWidth = 420,
-            MinHeight = 230,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Content = new StackPanel
-            {
-                Margin = new Thickness(18),
-                Spacing = 10,
-                Children =
-                {
-                    titleText,
-                    statusText,
-                    detailText,
-                    new StackPanel
-                    {
-                        Orientation = Orientation.Horizontal,
-                        HorizontalAlignment = HorizontalAlignment.Right,
-                        Spacing = 8,
-                        Margin = new Thickness(0, 18, 0, 0),
-                        Children =
-                        {
-                            installButton,
-                            removeButton,
-                            closeButton
-                        }
-                    }
-                }
-            }
-        };
-
-        void Refresh()
-        {
-            var status = _contextMenus.GetStatus();
-            titleText.Text = status.Title;
-            statusText.Text = status.IsInstalled ? "Installed" : "Not installed";
-            detailText.Text = status.Detail;
-            installButton.IsEnabled = status.IsSupported;
-            removeButton.IsEnabled = status.IsSupported && status.IsInstalled;
+            _palette.Activate();
+            return;
         }
 
-        installButton.Click += (_, _) =>
+        _palette = new QuickPaletteWindow(_history.ToList());
+        _palette.Completed += QuickPalette_Completed;
+        _palette.Closed += (_, _) =>
         {
-            var result = _contextMenus.Install();
-            SetStatus(result.Message);
-            Refresh();
-        };
-        removeButton.Click += (_, _) =>
-        {
-            var result = _contextMenus.Uninstall();
-            SetStatus(result.Message);
-            Refresh();
-        };
-        closeButton.Click += (_, _) => dialog.Close();
+            if (_palette is not null)
+            {
+                _palette.Completed -= QuickPalette_Completed;
+            }
 
-        Refresh();
-        await dialog.ShowDialog(this);
+            _palette = null;
+        };
+
+        PositionPalette(_palette);
+        _palette.Show();
+        _palette.Activate();
+    }
+
+    private void PositionPalette(Window palette)
+    {
+        if (_cursorPosition.TryGetCursorPosition(out var x, out var y))
+        {
+            palette.Position = new PixelPoint(x + 12, y + 12);
+            return;
+        }
+
+        var fallback = Position;
+        palette.Position = new PixelPoint(fallback.X + 80, fallback.Y + 80);
+    }
+
+    private async void QuickPalette_Completed(object? sender, QuickPaletteSelection selection)
+    {
+        await Task.Delay(160);
+
+        switch (selection.Action)
+        {
+            case QuickPaletteAction.Capture:
+                CaptureTextSelection();
+                break;
+            case QuickPaletteAction.TypeSelected:
+                await TypeSelectedAsync();
+                break;
+            case QuickPaletteAction.TypeEntry when selection.Entry is not null:
+                HistoryList.SelectedItem = selection.Entry;
+                await TypeEntryAsync(selection.Entry);
+                break;
+            case QuickPaletteAction.Stop:
+                StopTyping();
+                break;
+        }
     }
 
     private async Task TypeSelectedAsync()
@@ -279,12 +248,22 @@ public partial class MainWindow : Window
             return;
         }
 
+        await TypeEntryAsync(entry);
+    }
+
+    private async Task TypeEntryAsync(HistoryEntry entry)
+    {
+        if (_isTyping)
+        {
+            return;
+        }
+
         _typingCancellation = new CancellationTokenSource();
         _isTyping = true;
 
         try
         {
-            SetStatus("Release Ctrl+Alt+V to continue.");
+            SetStatus($"Release {TypeHotkeyText} to continue.");
             await _textOutput.WaitForTypeHotkeyReleaseAsync(_typingCancellation.Token);
 
             var lastProgress = 0;

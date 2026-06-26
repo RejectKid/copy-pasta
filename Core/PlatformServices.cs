@@ -6,7 +6,8 @@ internal enum CopyPastaHotkey
 {
     Capture,
     Type,
-    Stop
+    Stop,
+    Palette
 }
 
 internal interface IGlobalHotkeyService : IDisposable
@@ -28,23 +29,9 @@ internal interface ITextOutputService
     Task TypeTextAsync(string text, int delayMs, CancellationToken cancellationToken, IProgress<int>? progress = null);
 }
 
-internal sealed record ContextMenuIntegrationStatus(
-    bool IsSupported,
-    bool IsInstalled,
-    string Title,
-    string Detail);
-
-internal sealed record ContextMenuIntegrationResult(
-    bool Succeeded,
-    string Message);
-
-internal interface IContextMenuIntegrationService
+internal interface ICursorPositionService
 {
-    ContextMenuIntegrationStatus GetStatus();
-
-    ContextMenuIntegrationResult Install();
-
-    ContextMenuIntegrationResult Uninstall();
+    bool TryGetCursorPosition(out int x, out int y);
 }
 
 internal static class PlatformServices
@@ -55,5 +42,5 @@ internal static class PlatformServices
 
     public static ITextOutputService CreateTextOutputService() => PlatformServicesFactory.CreateTextOutputService();
 
-    public static IContextMenuIntegrationService CreateContextMenuIntegrationService() => PlatformServicesFactory.CreateContextMenuIntegrationService();
+    public static ICursorPositionService CreateCursorPositionService() => PlatformServicesFactory.CreateCursorPositionService();
 }

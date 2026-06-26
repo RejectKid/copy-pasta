@@ -5,7 +5,6 @@ using System.Text;
 using System.Windows.Automation;
 using Avalonia.Controls;
 using Avalonia.Platform;
-using Microsoft.Win32;
 
 namespace CopyPasta;
 
@@ -17,7 +16,7 @@ internal static class PlatformServicesFactory
 
     public static ITextOutputService CreateTextOutputService() => new WindowsTextOutputService();
 
-    public static IContextMenuIntegrationService CreateContextMenuIntegrationService() => new WindowsContextMenuIntegrationService();
+    public static ICursorPositionService CreateCursorPositionService() => new WindowsCursorPositionService();
 }
 
 internal sealed class WindowsGlobalHotkeyService : IGlobalHotkeyService
@@ -25,10 +24,12 @@ internal sealed class WindowsGlobalHotkeyService : IGlobalHotkeyService
     private const int CaptureHotkeyId = 100;
     private const int TypeHotkeyId = 101;
     private const int StopHotkeyId = 102;
+    private const int PaletteHotkeyId = 103;
 
     private const uint VirtualKeyC = 0x43;
     private const uint VirtualKeyV = 0x56;
     private const uint VirtualKeyX = 0x58;
+    private const uint VirtualKeySpace = 0x20;
 
     private IntPtr _handle;
     private IntPtr _previousWndProc;
@@ -71,10 +72,11 @@ internal sealed class WindowsGlobalHotkeyService : IGlobalHotkeyService
         var captureRegistered = NativeMethods.RegisterHotKey(_handle, CaptureHotkeyId, modifiers, VirtualKeyC);
         var typeRegistered = NativeMethods.RegisterHotKey(_handle, TypeHotkeyId, modifiers, VirtualKeyV);
         var stopRegistered = NativeMethods.RegisterHotKey(_handle, StopHotkeyId, modifiers, VirtualKeyX);
+        var paletteRegistered = NativeMethods.RegisterHotKey(_handle, PaletteHotkeyId, modifiers, VirtualKeySpace);
 
-        _registered = captureRegistered || typeRegistered || stopRegistered;
+        _registered = captureRegistered || typeRegistered || stopRegistered || paletteRegistered;
 
-        if (!captureRegistered || !typeRegistered || !stopRegistered)
+        if (!captureRegistered || !typeRegistered || !stopRegistered || !paletteRegistered)
         {
             error = "One or more global hotkeys are already in use by another app.";
         }
@@ -89,6 +91,7 @@ internal sealed class WindowsGlobalHotkeyService : IGlobalHotkeyService
             NativeMethods.UnregisterHotKey(_handle, CaptureHotkeyId);
             NativeMethods.UnregisterHotKey(_handle, TypeHotkeyId);
             NativeMethods.UnregisterHotKey(_handle, StopHotkeyId);
+            NativeMethods.UnregisterHotKey(_handle, PaletteHotkeyId);
 
             if (_previousWndProc != IntPtr.Zero)
             {
@@ -116,6 +119,9 @@ internal sealed class WindowsGlobalHotkeyService : IGlobalHotkeyService
                     return IntPtr.Zero;
                 case StopHotkeyId:
                     HotkeyPressed?.Invoke(this, CopyPastaHotkey.Stop);
+                    return IntPtr.Zero;
+                case PaletteHotkeyId:
+                    HotkeyPressed?.Invoke(this, CopyPastaHotkey.Palette);
                     return IntPtr.Zero;
             }
         }
@@ -517,114 +523,19 @@ internal sealed class WindowsTextOutputService : ITextOutputService
     }
 }
 
-internal sealed class WindowsContextMenuIntegrationService : IContextMenuIntegrationService
+internal sealed class WindowsCursorPositionService : ICursorPositionService
 {
-    private static readonly ContextMenuEntry[] Entries =
-    [
-        new(
-            @"Software\Classes\*\shell\CopyPasta",
-            "Add file path to Copy Pasta",
-            "%1"),
-        new(
-            @"Software\Classes\Directory\shell\CopyPasta",
-            "Add folder path to Copy Pasta",
-            "%V"),
-        new(
-            @"Software\Classes\Directory\Background\shell\CopyPasta",
-            "Add current folder to Copy Pasta",
-            "%V"),
-        new(
-            @"Software\Classes\DesktopBackground\shell\CopyPasta",
-            "Add desktop folder to Copy Pasta",
-            "%V")
-    ];
-
-    public ContextMenuIntegrationStatus GetStatus()
+    public bool TryGetCursorPosition(out int x, out int y)
     {
-        var isInstalled = Entries.All(entry =>
-            string.Equals(ReadDefaultValue($@"{entry.SubKey}\command"), CommandValue(entry.Argument), StringComparison.OrdinalIgnoreCase));
-
-        return new ContextMenuIntegrationStatus(
-            true,
-            isInstalled,
-            "Windows Explorer",
-            isInstalled
-                ? "Explorer context menus are installed for the current user. On Windows 11, they appear under Show more options."
-                : "Explorer context menus are not installed for the current user. On Windows 11, installed entries appear under Show more options.");
-    }
-
-    public ContextMenuIntegrationResult Install()
-    {
-        try
+        if (NativeMethods.GetCursorPos(out var point))
         {
-            var appPath = AppCommand.ResolveExecutablePath();
-            var iconValue = $"\"{appPath}\",0";
-
-            foreach (var entry in Entries)
-            {
-                SetString(entry.SubKey, string.Empty, entry.Label);
-                SetString(entry.SubKey, "Icon", iconValue);
-                SetString(entry.SubKey, "NoWorkingDirectory", string.Empty);
-                SetString($@"{entry.SubKey}\command", string.Empty, CommandValue(entry.Argument));
-            }
-
-            return new ContextMenuIntegrationResult(true, "Installed Explorer context menus for the current user.");
-        }
-        catch (Exception ex)
-        {
-            return new ContextMenuIntegrationResult(false, $"Could not install Explorer context menus: {ex.Message}");
-        }
-    }
-
-    public ContextMenuIntegrationResult Uninstall()
-    {
-        try
-        {
-            foreach (var entry in Entries)
-            {
-                var exists = false;
-                using (var existingKey = Registry.CurrentUser.OpenSubKey(entry.SubKey))
-                {
-                    exists = existingKey is not null;
-                }
-
-                if (!exists)
-                {
-                    continue;
-                }
-
-                Registry.CurrentUser.DeleteSubKeyTree(entry.SubKey);
-            }
-
-            return new ContextMenuIntegrationResult(true, "Removed Explorer context menus for the current user.");
-        }
-        catch (Exception ex)
-        {
-            return new ContextMenuIntegrationResult(false, $"Could not remove Explorer context menus: {ex.Message}");
-        }
-    }
-
-    private static string CommandValue(string argument)
-    {
-        return $"\"{AppCommand.ResolveExecutablePath()}\" {AppCommand.AddToHistoryOption} \"{argument}\"";
-    }
-
-    private static string? ReadDefaultValue(string subKey)
-    {
-        using var key = Registry.CurrentUser.OpenSubKey(subKey);
-        return key?.GetValue(string.Empty) as string;
-    }
-
-    private static void SetString(string subKey, string name, string value)
-    {
-        using var key = Registry.CurrentUser.CreateSubKey(subKey);
-        if (key is null)
-        {
-            throw new InvalidOperationException($"Could not open HKCU\\{subKey}.");
+            x = point.X;
+            y = point.Y;
+            return true;
         }
 
-        key.SetValue(name, value, RegistryValueKind.String);
+        x = 0;
+        y = 0;
+        return false;
     }
-
-    private sealed record ContextMenuEntry(string SubKey, string Label, string Argument);
 }

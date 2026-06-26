@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Avalonia.Controls;
 
@@ -9,9 +8,11 @@ internal sealed class MacOSGlobalHotkeyService : IGlobalHotkeyService
     private const int KeyCodeC = 8;
     private const int KeyCodeV = 9;
     private const int KeyCodeX = 7;
+    private const int KeyCodeSpace = 49;
     private const ulong EventMaskKeyDown = 1UL << 10;
     private const ulong EventFlagMaskControl = 0x0004_0000;
     private const ulong EventFlagMaskAlternate = 0x0008_0000;
+    private const ulong EventFlagMaskCommand = 0x0010_0000;
 
     private IntPtr _eventTap;
     private IntPtr _runLoopSource;
@@ -85,7 +86,8 @@ internal sealed class MacOSGlobalHotkeyService : IGlobalHotkeyService
 
         var flags = (ulong)MacNative.CGEventGetFlags(eventRef);
         var keyCode = (int)MacNative.CGEventGetIntegerValueField(eventRef, 9);
-        var hasModifiers = (flags & EventFlagMaskControl) != 0 && (flags & EventFlagMaskAlternate) != 0;
+        var hasModifiers = (flags & EventFlagMaskAlternate) != 0 &&
+            (flags & (EventFlagMaskControl | EventFlagMaskCommand)) != 0;
 
         if (!hasModifiers)
         {
@@ -102,6 +104,9 @@ internal sealed class MacOSGlobalHotkeyService : IGlobalHotkeyService
                 return IntPtr.Zero;
             case KeyCodeX:
                 HotkeyPressed?.Invoke(this, CopyPastaHotkey.Stop);
+                return IntPtr.Zero;
+            case KeyCodeSpace:
+                HotkeyPressed?.Invoke(this, CopyPastaHotkey.Palette);
                 return IntPtr.Zero;
             default:
                 return eventRef;
@@ -187,251 +192,31 @@ internal sealed class MacOSTextOutputService : ITextOutputService
     }
 }
 
-internal sealed class MacOSContextMenuIntegrationService : IContextMenuIntegrationService
+internal sealed class MacOSCursorPositionService : ICursorPositionService
 {
-    private const string ServiceName = "Add to Copy Pasta";
-
-    private static string WorkflowDirectory => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-        "Library",
-        "Services",
-        $"{ServiceName}.workflow");
-
-    private static string ContentsDirectory => Path.Combine(WorkflowDirectory, "Contents");
-
-    public ContextMenuIntegrationStatus GetStatus()
+    public bool TryGetCursorPosition(out int x, out int y)
     {
-        var isInstalled = File.Exists(Path.Combine(ContentsDirectory, "Info.plist")) &&
-            File.Exists(Path.Combine(ContentsDirectory, "document.wflow"));
-
-        return new ContextMenuIntegrationStatus(
-            true,
-            isInstalled,
-            "macOS Finder",
-            isInstalled
-                ? "Finder Quick Action is installed for the current user."
-                : "Finder Quick Action is not installed for the current user.");
-    }
-
-    public ContextMenuIntegrationResult Install()
-    {
-        try
+        var eventRef = MacNative.CGEventCreate(IntPtr.Zero);
+        if (eventRef == IntPtr.Zero)
         {
-            Directory.CreateDirectory(ContentsDirectory);
-            File.WriteAllText(Path.Combine(ContentsDirectory, "Info.plist"), CreateInfoPlist());
-            File.WriteAllText(Path.Combine(ContentsDirectory, "document.wflow"), CreateWorkflowDocument());
-            RefreshServicesDatabase();
-
-            return new ContextMenuIntegrationResult(true, "Installed Finder Quick Action for the current user.");
-        }
-        catch (Exception ex)
-        {
-            return new ContextMenuIntegrationResult(false, $"Could not install Finder Quick Action: {ex.Message}");
-        }
-    }
-
-    public ContextMenuIntegrationResult Uninstall()
-    {
-        try
-        {
-            if (Directory.Exists(WorkflowDirectory))
-            {
-                Directory.Delete(WorkflowDirectory, true);
-            }
-
-            RefreshServicesDatabase();
-            return new ContextMenuIntegrationResult(true, "Removed Finder Quick Action for the current user.");
-        }
-        catch (Exception ex)
-        {
-            return new ContextMenuIntegrationResult(false, $"Could not remove Finder Quick Action: {ex.Message}");
-        }
-    }
-
-    private static string CreateInfoPlist()
-    {
-        return $$"""
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleName</key>
-    <string>{{XmlEscape(ServiceName)}}</string>
-    <key>NSServices</key>
-    <array>
-        <dict>
-            <key>NSMenuItem</key>
-            <dict>
-                <key>default</key>
-                <string>{{XmlEscape(ServiceName)}}</string>
-            </dict>
-            <key>NSMessage</key>
-            <string>runWorkflowAsService</string>
-            <key>NSSendFileTypes</key>
-            <array>
-                <string>public.item</string>
-                <string>public.folder</string>
-            </array>
-        </dict>
-    </array>
-</dict>
-</plist>
-""";
-    }
-
-    private static string CreateWorkflowDocument()
-    {
-        var command = $"for item in \"$@\"; do\n  {ShellQuote(AppCommand.ResolveExecutablePath())} {AppCommand.AddToHistoryOption} \"$item\"\ndone";
-        var inputUuid = Guid.NewGuid().ToString().ToUpperInvariant();
-        var outputUuid = Guid.NewGuid().ToString().ToUpperInvariant();
-        var actionUuid = Guid.NewGuid().ToString().ToUpperInvariant();
-
-        return $$"""
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>AMApplicationBuild</key>
-    <string>523</string>
-    <key>AMApplicationVersion</key>
-    <string>2.10</string>
-    <key>AMDocumentVersion</key>
-    <string>2</string>
-    <key>actions</key>
-    <array>
-        <dict>
-            <key>action</key>
-            <dict>
-                <key>AMAccepts</key>
-                <dict>
-                    <key>Container</key>
-                    <string>List</string>
-                    <key>Optional</key>
-                    <true/>
-                    <key>Types</key>
-                    <array>
-                        <string>com.apple.cocoa.path</string>
-                    </array>
-                </dict>
-                <key>AMActionVersion</key>
-                <string>2.0.3</string>
-                <key>AMApplication</key>
-                <array>
-                    <string>Automator</string>
-                </array>
-                <key>AMProvides</key>
-                <dict>
-                    <key>Container</key>
-                    <string>List</string>
-                    <key>Types</key>
-                    <array>
-                        <string>com.apple.cocoa.path</string>
-                    </array>
-                </dict>
-                <key>ActionBundlePath</key>
-                <string>/System/Library/Automator/Run Shell Script.action</string>
-                <key>ActionName</key>
-                <string>Run Shell Script</string>
-                <key>ActionParameters</key>
-                <dict>
-                    <key>COMMAND_STRING</key>
-                    <string>{{XmlEscape(command)}}</string>
-                    <key>CheckedForUserDefaultShell</key>
-                    <true/>
-                    <key>inputMethod</key>
-                    <integer>1</integer>
-                    <key>shell</key>
-                    <string>/bin/bash</string>
-                    <key>source</key>
-                    <string></string>
-                </dict>
-                <key>BundleIdentifier</key>
-                <string>com.apple.RunShellScript</string>
-                <key>CFBundleVersion</key>
-                <string>2.0.3</string>
-                <key>CanShowSelectedItemsWhenRun</key>
-                <false/>
-                <key>CanShowWhenRun</key>
-                <true/>
-                <key>Category</key>
-                <string>AMCategoryUtilities</string>
-                <key>Class Name</key>
-                <string>RunShellScriptAction</string>
-                <key>InputUUID</key>
-                <string>{{inputUuid}}</string>
-                <key>Keywords</key>
-                <array>
-                    <string>Shell</string>
-                    <string>Script</string>
-                </array>
-                <key>OutputUUID</key>
-                <string>{{outputUuid}}</string>
-                <key>UUID</key>
-                <string>{{actionUuid}}</string>
-                <key>UnlocalizedApplications</key>
-                <array>
-                    <string>Automator</string>
-                </array>
-            </dict>
-            <key>isViewVisible</key>
-            <false/>
-        </dict>
-    </array>
-    <key>connectors</key>
-    <dict/>
-    <key>workflowMetaData</key>
-    <dict>
-        <key>serviceApplicationBundleID</key>
-        <string>com.apple.finder</string>
-        <key>serviceInputTypeIdentifier</key>
-        <string>com.apple.Automator.fileSystemObject</string>
-        <key>workflowTypeIdentifier</key>
-        <string>com.apple.Automator.servicesMenu</string>
-    </dict>
-</dict>
-</plist>
-""";
-    }
-
-    private static string ShellQuote(string value)
-    {
-        return $"'{value.Replace("'", "'\"'\"'", StringComparison.Ordinal)}'";
-    }
-
-    private static string XmlEscape(string value)
-    {
-        return value
-            .Replace("&", "&amp;", StringComparison.Ordinal)
-            .Replace("<", "&lt;", StringComparison.Ordinal)
-            .Replace(">", "&gt;", StringComparison.Ordinal)
-            .Replace("\"", "&quot;", StringComparison.Ordinal)
-            .Replace("'", "&apos;", StringComparison.Ordinal);
-    }
-
-    private static void RefreshServicesDatabase()
-    {
-        const string pbsPath = "/System/Library/CoreServices/pbs";
-        if (!File.Exists(pbsPath))
-        {
-            return;
+            x = 0;
+            y = 0;
+            return false;
         }
 
         try
         {
-            using var process = Process.Start(new ProcessStartInfo
-            {
-                FileName = pbsPath,
-                ArgumentList = { "-update" },
-                CreateNoWindow = true
-            });
-            process?.WaitForExit(1500);
+            var point = MacNative.CGEventGetLocation(eventRef);
+            x = (int)Math.Round(point.X);
+            y = (int)Math.Round(point.Y);
+            return true;
         }
-        catch
+        finally
         {
+            MacNative.CFRelease(eventRef);
         }
     }
 }
-
 internal static class MacNative
 {
     private const string CoreFoundationPath = "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation";
@@ -439,6 +224,13 @@ internal static class MacNative
     public static readonly IntPtr kCFRunLoopCommonModes = GetCoreFoundationStringConstant("kCFRunLoopCommonModes");
 
     public delegate IntPtr CGEventTapCallBack(IntPtr proxy, int type, IntPtr eventRef, IntPtr userInfo);
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct CGPoint
+    {
+        public double X;
+        public double Y;
+    }
 
     [DllImport("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices")]
     public static extern bool AXIsProcessTrusted();
@@ -469,6 +261,12 @@ internal static class MacNative
 
     [DllImport("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices")]
     public static extern void CGEventPost(int tap, IntPtr eventRef);
+
+    [DllImport("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices")]
+    public static extern IntPtr CGEventCreate(IntPtr source);
+
+    [DllImport("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices")]
+    public static extern CGPoint CGEventGetLocation(IntPtr eventRef);
 
     [DllImport(CoreFoundationPath)]
     public static extern IntPtr CFMachPortCreateRunLoopSource(IntPtr allocator, IntPtr port, nint order);
